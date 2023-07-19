@@ -1,4 +1,3 @@
-```
 # calc_mean_bias.py
 
 This script calculates the mean bias of the S-PLUS data against time.
