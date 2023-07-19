@@ -12,6 +12,8 @@ python plot_footprint.py
 
 The script will output a PNG file called `splus_footprint.png`.
 
+![Example Output Plot](splus_footprint.png)
+
 ## Notes
 
 The 2MASS catalog is available at http://cdsarc.u-strasbg.fr/viz-bin/Cat?II/281
