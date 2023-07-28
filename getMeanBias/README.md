@@ -15,7 +15,7 @@ python3 calc_mean_bias.py -r <raw_data_directory> -w <working_directory> -n <num
 
 ## Example
 
-```bash
+```
 python3 calc_mean_bias.py -r /data/splus/raw -w /data/splus/work -n 4
 ```
 
