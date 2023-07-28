@@ -25,7 +25,7 @@ def parser():
     parser.add_argument('-n', '--ncores', type=int, help='number of cores')
     # save image if requested
     parser.add_argument('-s', '--save', type=bool,
-                        help='save image', default=False)
+                        help='save tab', default=True)
     args = parser.parse_args()
 
     return args
@@ -49,7 +49,8 @@ def mean_over_list(bias_list, ncores):
     print('Joining pool...')
     pool.join()
     print(mean_list)
-    return mean_list
+
+return mean_list
 
 # define main function
 
