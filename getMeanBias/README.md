@@ -17,7 +17,7 @@ python3 calc_mean_bias.py -r <raw_data_directory> -w <working_directory> -n <num
 
 ```
 python3 calc_mean_bias.py -r /data/splus/raw -w /data/splus/work -n 4
-
+```
 
 This will calculate the mean bias of the S-PLUS data in the `/data/splus/raw` directory using 4 cores. The plot will be saved in the `/data/splus/work` directory.
 
