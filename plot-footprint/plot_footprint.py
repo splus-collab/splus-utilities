@@ -15,6 +15,7 @@
 # email: fabio.herpich@ast.cam.ac.uk
 # --------------------------------------------------
 
+import os
 import sys
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -26,8 +27,10 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Plots the S-PLUS footprint on the sky')
-    parser.add_argument('--splusfoot', type=str, default='tiles_nc.csv',
+    parser.add_argument('--splusfoot', type=str, required=True,
                         help='S-PLUS footprint file')
+    parser.add_argument('--workdir', type=str, default=os.getcwd(),
+                        help='Working directory')
     parser.add_argument('--is2mass', action='store_true',
                         help='If 2mass allssky catalogue is available')
     parser.add_argument('--twomasscat', type=str, default=None,
