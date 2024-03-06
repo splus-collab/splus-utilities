@@ -1,6 +1,7 @@
 #!/bin/env python
 
 import os
+import sys
 import datetime
 import numpy as np
 import pandas as pd
@@ -23,6 +24,15 @@ def parse_args():
                         help='Save figures to disk')
     parser.add_argument('--all', action='store_true',
                         help='Plot all data at once')
+    parser.add_argument('--test', action='store_true',
+                        help='Run tests in a limited dataset')
+    parser.add_argument('--test_num_nights', type=int, default=10,
+                        help='Number of nights to plot in test mode')
+
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
     return parser.parse_args()
 
 
@@ -85,6 +95,8 @@ def get_ebv(args, res=200, save=True):
 
 def plot_data(args):
     df = pd.read_csv(os.path.join(args.workdir, 't80s_observations_clean.csv'))
+    df = df[:args.test_num_nights] if args.test else df
+
     c = SkyCoord(ra=df['ra'], dec=df['dec'],
                  unit=(u.deg, u.deg), frame='icrs')
     ra_rad = c.ra.wrap_at(180 * u.deg).radian
@@ -104,7 +116,7 @@ def plot_data(args):
 
     pidcolours = {'SPLUS': 'b', 'SPLUS-GAL': 'g', 'STRIPE': 'r', 'HYDRA': 'c',
                   'MC': 'm', 'SHORTS': 'y', 'CN': 'orange', 'EXTMONI': 'limegreen',
-                  'M2CAL': 'pink', 'SN': 'purple', 'other': 'k'}
+                  'M2CAL': 'pink', 'SN': 'purple', 'TOO': 'forestgreen', 'other': 'k'}
     print('Assigning colours to PIDs')
     for i, pid in enumerate(df['pid']):
         found = False
@@ -120,7 +132,12 @@ def plot_data(args):
             df['pid'][i] = 'SHORTS'
         if 'HYDRA' in pid:
             df['pid'][i] = 'HYDRA'
+        if 'PRIO' in pid:
+            df['pid'][i] = 'SPLUS'
+        if 'TOO' in pid:
+            df['pid'][i] = 'TOO'
     pids = df['pid']
+
     print('Plotting data')
 
     for date in np.unique(df['date']):
@@ -178,9 +195,10 @@ def plot_data(args):
             props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
             ax.text(0.8, 1.1, textstr, transform=ax.transAxes,
                     fontsize=14, verticalalignment='top', bbox=props)
+            plt.tight_layout()
             if args.savefig:
                 print('Saving figure', figname)
-                plt.savefig(figname, dpi=150, bbox_inches='tight')
+                plt.savefig(figname, dpi=150)
                 plt.close()
             else:
                 plt.show()
@@ -242,7 +260,7 @@ def plot_data_all(args):
 
 
 def main(args):
-    if not os.path.exists('t80s_observations_clean.csv'):
+    if not os.path.exists(os.path.join(args.workdir, 't80s_observations_clean.csv')):
         prepare_dateframe(args)
     plot_data(args)
 
