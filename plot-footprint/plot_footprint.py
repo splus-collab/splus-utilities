@@ -24,6 +24,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Plots the S-PLUS footprint on the sky')
@@ -41,6 +42,7 @@ def parse_args():
         sys.exit(1)
     return parser.parse_args()
 
+
 def plot_foot(args):
     plt.figure(figsize=(16, 8.4))
     ax = plt.subplot(111, projection="aitoff")
@@ -48,7 +50,8 @@ def plot_foot(args):
 
     if args.is2mass:
         if args.twomasscat is None:
-            print('If 2mass allssky catalogue is available, please provide the catalogue name')
+            print(
+                'If 2mass allssky catalogue is available, please provide the catalogue name')
             raise ValueError('Please provide the 2mass allssky catalogue name')
         print('Using 2MASS catalogue %s' % args.twomasscat)
         try:
@@ -56,7 +59,8 @@ def plot_foot(args):
         except (UnicodeDecodeError, OSError):
             cat = ascii.read(args.twomasscat, format='csv')
         else:
-            raise ValueError('Please provide a valid 2mass allssky catalogue on FITS or CSV format')
+            raise ValueError(
+                'Please provide a valid 2mass allssky catalogue on FITS or CSV format')
 
         c0 = SkyCoord(ra=cat['RAJ2000'], dec=cat['DEJ2000'],
                       unit=(u.deg, u.deg), frame='icrs')
@@ -88,6 +92,16 @@ def plot_foot(args):
     ax.scatter(ra_rad[mask_foo], dec_rad[mask_foo],
                marker='H', s=8, color='r', label=lbl)
 
+    # # overlay
+    # ct = ascii.read(
+    #     '/home/herpich/Downloads/info_cls_shiftgap_iter_10.0hmpcf_nrb.dat', format='fast_no_header')
+    # ctc = SkyCoord(ra=ct['col2'], dec=ct['col3'],
+    #                unit=(u.deg, u.deg), frame='icrs')
+    # ra_radc = ctc.ra.wrap_at(180 * u.deg).radian
+    # dec_radc = ctc.dec.radian
+    # ax.scatter(ra_radc, dec_radc, marker='H',
+    #            s=12, color='blue', label='Claudia')
+
     plt.setp(ax.get_xticklabels(), fontsize=18)
     plt.setp(ax.get_yticklabels(), fontsize=18)
     plt.legend(loc='upper right', scatterpoints=1, markerscale=3, shadow=True,
@@ -99,6 +113,7 @@ def plot_foot(args):
     print('Saving fig %s...' % pathtosave)
     plt.savefig(pathtosave, format='png', dpi=300)
     plt.show()
+
 
 if __name__ == '__main__':
     args = parse_args()
