@@ -1,24 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# This script is part of the set of tools used to prepare the S-PLUS data
+# Current version: prepared by Herpich F. R., March, 2024 - fabio.herpich@ast.cam.ac.uk
+# Original version: prepared by Luisa Buzzo, 2021, which was used to produce masks for the S-PLUS DR3
 
 import os
 import sys
 import argparse
 import numpy as np
 import astropy.units as u
-# from astropy.coordinates import ICRS, Galactic, FK4, FK5
 from astropy.coordinates import SkyCoord, Angle
-# from astropy.coordinates import search_around_sky
-# from astropy.table import Table, vstack, hstack, unique
 from astropy.io import fits
 from astropy.wcs import WCS
 from regions import CirclePixelRegion, PixCoord
 from astropy.wcs.utils import skycoord_to_pixel as sky2pix
-# from photutils import DAOStarFinder
 from astropy.stats import sigma_clipped_stats
-# from skyplot import *
-# import astropy.coordinates as coord
-# from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from astroquery.vizier import Vizier
 import pandas as pd
 import matplotlib.pyplot as plt
