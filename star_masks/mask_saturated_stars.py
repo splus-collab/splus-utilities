@@ -14,7 +14,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from regions import CirclePixelRegion, PixCoord
 from astropy.wcs.utils import skycoord_to_pixel as sky2pix
-from photutils import DAOStarFinder
+# from photutils import DAOStarFinder
 from astropy.stats import sigma_clipped_stats
 # from skyplot import *
 # import astropy.coordinates as coord
@@ -55,6 +55,12 @@ def get_args():
     args, _ = parser.parse_known_args()
     parser.add_argument('--outdir', type=str, default=args.workdir,
                         help='Output directory')
+    parser.add_argument('--showfig', action='store_true',
+                        help='Show figure')
+    parser.add_argument('--savefig', action='store_true',
+                        help='Save figure')
+    parser.add_argument('--istest', action='store_true',
+                        help='Test mode')
 
     if len(sys.argv) < 2:
         parser.print_help()
@@ -63,7 +69,9 @@ def get_args():
     return parser.parse_args()
 
 
-def get_splusfootprint(args):
+def get_splusfootprint(
+    args: argparse.Namespace
+):
     """
     Get the S-PLUS footprint
     """
@@ -73,14 +81,18 @@ def get_splusfootprint(args):
     return footprint
 
 
-def query_gsc(ra, dec, radius=1.0):
+def query_gsc(
+    ra: float,
+    dec: float,
+    radius: float = 1.0
+):
     """
     Query the GSC1.2 catalog using the Vizier service
     """
 
     v = Vizier(columns=['RAJ2000', 'DEJ2000', 'Pmag', 'e_Pmag', 'PosErr',
                'n_Pmag', 'Epoch', 'Class'],
-               column_filters={"Pmag": "<12"},
+               column_filters={"Pmag": "<14"},
                catalog="I/254")
     v.ROW_LIMIT = 10000
     result = v.query_region(SkyCoord(ra=ra, dec=dec, unit=(
@@ -90,7 +102,11 @@ def query_gsc(ra, dec, radius=1.0):
     return result[result['Class'] == 0]
 
 
-def plot_stars(gsccat, image, spluscat=None, showfig=False, savefig=False):
+def get_stars(
+    gsccat: pd.DataFrame,
+    image: str,
+    spluscat: pd.DataFrame | None = None,
+):
     f = fits.open(image)
     mean, median, std = sigma_clipped_stats(f[1].data, sigma=3.0)
     print('mean, median, std:', mean, median, std)
@@ -99,132 +115,135 @@ def plot_stars(gsccat, image, spluscat=None, showfig=False, savefig=False):
                           dec=gsccat['DEJ2000'].value.data,
                           unit=(u.deg, u.deg), frame='icrs')
     pixcoords = np.transpose(sky2pix(gsc_coords, wcs))
-    gscrad = 23979.31 * \
-        np.e ** (-(gsccat['Pmag'] - (-10.58363)) ** 2/(2 * 5.5 ** 2))
-    gscrad[gscrad < 50] = 50
+    gscrad = 19223 * \
+        np.e ** (-(gsccat['Pmag'] - (-11.1)) ** 2/(2 * 6.2 ** 2))
+    gscrad[gscrad < 30] = 30
 
-    if showfig:
-        gscregions = [CirclePixelRegion(center=PixCoord(x, y), radius=z)
-                      for (x, y), z in zip(pixcoords, gscrad)]
+    objects2plot = {'image': f,
+                    'wcs': wcs,
+                    'std': std,
+                    'gsc': {'coords': gsc_coords,
+                            'rad': gscrad,
+                            'pixcoords': pixcoords,
+                            'colour': 'red',
+                            'mag': gsccat['Pmag'].value.data},
+                    }
+    if spluscat is not None:
+        mask = spluscat['MAG_AUTO'] < 16
+        # mask &= spluscat['FLAGS'] != 0
+        # mask &= spluscat['CLASS_STAR'] > 0.7
+        splus_coords = SkyCoord(ra=spluscat['ALPHA_J2000'],
+                                dec=spluscat['DELTA_J2000'],
+                                unit=(u.deg, u.deg), frame='icrs')
+        spixcoords = sky2pix(splus_coords, wcs)
+        objects2plot['splus'] = {'coords': splus_coords,
+                                 'rad': 5,
+                                 'pixcoords': spixcoords,
+                                 'colour': 'blue',
+                                 'mask': mask}
 
-        fig = plt.figure(figsize=(10, 10))
-        ax = fig.add_subplot(111, projection=wcs)
-        f[1].data[f[1].data < std] = 0
-        ax.imshow(f[1].data, origin='lower', vmin=0, vmax=3.5)
-        print('Plotting stars')
-        for reg, mag in zip(gscregions, gsccat['Pmag']):
-            reg.plot(ax=ax, color='red', lw=3)
-            ax.text(reg.center.x, reg.center.y, f'{mag:.2f}', color='white')
-        if spluscat is not None:
-            mask = spluscat['MAG_AUTO'] < 16
-            # mask &= spluscat['FLAGS'] != 0
-            # mask &= spluscat['CLASS_STAR'] > 0.7
-            splus_coords = SkyCoord(ra=spluscat['ALPHA_J2000'][mask],
-                                    dec=spluscat['DELTA_J2000'][mask],
-                                    unit=(u.deg, u.deg), frame='icrs')
-            spixcoords = sky2pix(splus_coords, wcs)
-            splusregions = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
-                            for x, y in zip(spixcoords[0], spixcoords[1])]
-            for reg in splusregions:
-                reg.plot(ax=ax, color='blue', lw=3)
-
-        ax.set_xlabel('RA')
-        ax.set_ylabel('Dec')
-        plt.tight_layout()
-
-        if savefig:
-            outputname = os.path.join(args.workdir,
-                                      image.split('/')[-1].replace('swp.fz', '_gsc.png'))
-            plt.savefig(outputname, dpi=300)
-        plt.show()
-
-    return gsc_coords, gscrad
+    objects2plot['masksat'] = None
+    return objects2plot
 
 
-def run_daofinder(image, fwhm=50.0, threshold=1.0):
-    """
-    Run the DAOStarFinder algorithm to find stars in the image
-    """
-    f = fits.open(image)
-    data = f[1].data
-    mean, median, std = sigma_clipped_stats(data, sigma=5.0)
-    # median, std = 0.0, 0.5
-    # daofind = DAOStarFinder(fwhm=fwhm, sharplo=0.2, sharphi=0.9,
-    #                         roundlo=-0.5, roundhi=0.5, threshold=threshold*std)
-    daofind = DAOStarFinder(
-        fwhm=fwhm, threshold=threshold*std, ratio=0.5, theta=90.0)
-    sources = daofind(data - median)
-    norm_flux = sources['flux'] / np.max(sources['flux'])
-    mask = norm_flux > 0.5
-    import pdb
-    pdb.set_trace()
-    return sources[mask]
+def plot_stars(
+    args: argparse.Namespace,
+    objects2plot: dict,
+):
+    data = objects2plot['image'][1].data
+    wcs = objects2plot['wcs']
+    pixcoords = objects2plot['gsc']['pixcoords']
+    gscrad = objects2plot['gsc']['rad']
+    gscregions = [CirclePixelRegion(center=PixCoord(x, y), radius=z)
+                  for (x, y), z in zip(pixcoords, gscrad)]
 
-
-def plot_daostars(image, sources):
-    f = fits.open(image)
-    wcs = WCS(f[1].header)
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection=wcs)
-    ax.imshow(f[1].data, origin='lower', vmin=-0.1, vmax=3.5)
-    daosources = np.transpose([sources['xcentroid'], sources['ycentroid']])
-    daorad = 4 * (abs(sources['sharpness']) +
-                  abs(sources['roundness1']) + abs(sources['roundness2']))
-    daoregions = [CirclePixelRegion(center=PixCoord(x, y), radius=r)
-                  for (x, y), r in zip(daosources, daorad)]
-    for reg in daoregions:
-        reg.plot(ax=ax, color='red', lw=3)
-    plt.show()
+    data[data < objects2plot['std']] = 0
+    ax.imshow(data, origin='lower', vmin=0, vmax=3.5)
+    print('Plotting stars')
+    for reg, mag in zip(gscregions, objects2plot['gsc']['mag']):
+        reg.plot(ax=ax, color='c', lw=3)
+        ax.text(reg.center.x, reg.center.y, f'{mag:.2f}', color='white')
+    if 'splus' in objects2plot and objects2plot['masksat'] is None:
+        spixcoords = objects2plot['splus']['pixcoords']
+        mask = objects2plot['splus']['mask']
+        splusregions = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
+                        for x, y in zip(spixcoords[0][mask], spixcoords[1][mask])]
+        for reg in splusregions:
+            reg.plot(ax=ax, color='blue', lw=3)
+        outputname = os.path.join(args.workdir, args.field + '_splus.png')
+    elif 'splus' in objects2plot and objects2plot['masksat'] is not None:
+        spixcoords = objects2plot['splus']['pixcoords']
+        mask = objects2plot['masksat']
+        masked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
+                       for x, y in zip(spixcoords[0][mask == 1], spixcoords[1][mask == 1])]
+        for reg in masked_regs:
+            reg.plot(ax=ax, color='r', lw=3)
+        unmasked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
+                         for x, y in zip(spixcoords[0][mask == 0], spixcoords[1][mask == 0])]
+        for reg in unmasked_regs:
+            reg.plot(ax=ax, color='forestgreen', lw=3)
+        outputname = os.path.join(args.workdir, args.field + '_masked.png')
+    elif 'splus' not in objects2plot:
+        print('No S-PLUS catalog provided')
+        outputname = os.path.join(args.workdir, args.field + '_gsc.png')
+    else:
+        print('No mask provided')
+        outputname = os.path.join(args.workdir, args.field + '_nomask.png')
+
+    ax.set_xlabel('RA')
+    ax.set_ylabel('Dec')
+    plt.tight_layout()
+
+    if args.savefig:
+        plt.savefig(outputname, dpi=300)
+        if args.showfig:
+            plt.show()
+        else:
+            plt.close()
+    if args.showfig:
+        plt.show()
+    else:
+        plt.close()
 
 
-def make_masks(coords, rad, image, spluscat, showfig=False, savefig=False):
-    f = fits.open(image)
-    wcs = WCS(f[1].header)
-    scoords = SkyCoord(ra=spluscat['ALPHA_J2000'], dec=spluscat['DELTA_J2000'],
-                       unit=(u.deg, u.deg), frame='icrs')
-    mask = np.zeros(len(spluscat))
-    for coord, radius in zip(coords, rad):
+def make_masks(
+    args: argparse.Namespace,
+    objects2plot: dict,
+):
+    if 'splus' in objects2plot:
+        scoords = objects2plot['splus']['coords']
+    else:
+        raise ValueError('No S-PLUS catalog provided')
+    mask = np.zeros(len(scoords), dtype=int)
+    for coord, radius in zip(objects2plot['gsc']['coords'], objects2plot['gsc']['rad']):
         separation = coord.separation(scoords)
         mask[separation < radius * 0.55 * u.arcsec] = 1
 
-    if showfig:
-        gscregions = [CirclePixelRegion(center=PixCoord(x, y), radius=z)
-                      for (x, y), z in zip(np.transpose(sky2pix(coords, wcs)), rad)]
-        fig = plt.figure(figsize=(10, 10))
-        ax = fig.add_subplot(111, projection=wcs)
-        ax.imshow(f[1].data, origin='lower', vmin=0, vmax=3.5)
-        for reg in gscregions:
-            reg.plot(ax=ax, color='red', lw=3)
+    objects2plot['masksat'] = mask
 
-        masked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
-                       for x, y in np.transpose(sky2pix(scoords[mask == 1], wcs))]
-        for reg in masked_regs:
-            reg.plot(ax=ax, color='blue', lw=5)
-        unmasked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
-                         for x, y in np.transpose(sky2pix(scoords[mask == 0], wcs))]
-        for reg in unmasked_regs:
-            reg.plot(ax=ax, color='green', lw=5)
-        if savefig:
-            outputname = os.path.join(args.workdir,
-                                      image.split('/')[-1].replace('swp.fz', '_masked.png'))
-            plt.savefig(outputname, dpi=300)
-        plt.show()
+    if args.showfig or args.savefig:
+        plot_stars(args, objects2plot)
 
-    return mask
+    return objects2plot
 
 
-def check_distance_to_border(mask, spluscat, sfoot, fieldname):
+def check_distance_to_border(
+    objects2plot: dict,
+    sfoot: pd.DataFrame,
+    fieldname: str,
+):
     """
     Check the distance of the objects to the border of the field
     """
     field_coords = sfoot[sfoot['NAME'] == fieldname]
     field_coords = SkyCoord(ra=field_coords['RA'], dec=field_coords['DEC'], unit=(
         u.deg, u.deg))
-    scoords = SkyCoord(ra=spluscat['ALPHA_J2000'], dec=spluscat['DELTA_J2000'],
-                       unit=(u.deg, u.deg), frame='icrs')
-    mask[(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 10 * u.arcsec) |
-         (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 10 * u.arcsec)] += 2
-    return mask
+    scoords = objects2plot['splus']['coords']
+    objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 10 * u.arcsec) |
+                            (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 10 * u.arcsec)] += 2
+    return objects2plot
 
 
 def main():
@@ -235,26 +254,30 @@ def main():
         '-', '_') if 'STRIPE82' in args.field else args.field
     imagename = os.path.join(args.datadir, f'{args.field}_R_swp.fz')
     if args.ref2use in ['gsc', 'GSC']:
-        splus_cat = fits.open(os.path.join(
-            args.datadir, args.spluscat))[2].data
-        field_coords = sfoot[sfoot['NAME'] == fieldname]
-        gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
-        gsc_coords, gsc_rad = plot_stars(gsccat, imagename, showfig=True)
-        masked_bright_stars = make_masks(
-            gsc_coords, gsc_rad, imagename, splus_cat)
+        if args.istest:
+            field_coords = sfoot[sfoot['NAME'] == fieldname]
+            gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
+            objects2plot = get_stars(gsccat, imagename)
+            plot_stars(args, objects2plot)
+            return
+        else:
+            splus_cat = fits.open(os.path.join(
+                args.datadir, args.spluscat))[2].data
+            field_coords = sfoot[sfoot['NAME'] == fieldname]
+            gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
+            objects2plot = get_stars(gsccat, imagename, splus_cat)
+            plot_stars(args, objects2plot)
 
-        mask = check_distance_to_border(
-            masked_bright_stars, splus_cat, sfoot, fieldname)
+        objects2plot = make_masks(args, objects2plot)
+
+        objects2plot = check_distance_to_border(objects2plot, sfoot, fieldname)
         newdf = pd.DataFrame()
-        newdf['RA'] = splus_cat['ALPHA_J2000']
-        newdf['Dec'] = splus_cat['DELTA_J2000']
-        newdf['MASK'] = mask
+        newdf['RA'] = objects2plot['splus']['coords'].ra.value
+        newdf['Dec'] = objects2plot['splus']['coords'].dec.value
+        newdf['MASK'] = objects2plot['masksat']
         print('Writing masked catalog', os.path.join(
             args.outdir, f'{args.field}_mask.csv'))
         newdf.to_csv(os.path.join(args.outdir, f'{args.field}_mask.csv'))
-    elif args.ref2use in ['dao', 'DAO', 'daofinder']:
-        sources = run_daofinder(imagename)
-        plot_daostars(imagename, sources)
     return
 
 
