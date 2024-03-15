@@ -23,6 +23,8 @@ from astropy.io import ascii, fits
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
+import sfdmap
+import pandas as pd
 
 
 def parse_args():
@@ -36,11 +38,33 @@ def parse_args():
                         help='If 2mass allssky catalogue is available')
     parser.add_argument('--twomasscat', type=str, default=None,
                         help='2MASS allssky catalogue name')
-    # print help if no arguments
+    parser.add_argument('--sfddata', type=str, default=os.getcwd(),
+                        help='Path to SFD dust map data')
+    parser.add_argument('--savefig', action='store_true',
+                        help='Save figure')
+    parser.add_argument('--overlaycat', type=str, default=None,
+                        help='Overlay catalogue')
+
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
     return parser.parse_args()
+
+
+def get_ebv(args, res=200, save=True):
+    ra = np.linspace(-180, 180, res)
+    dec = np.linspace(-90, 90, res)
+    mesra, mesdec = np.meshgrid(ra, dec)
+    coords = SkyCoord(ra=mesra.flatten(), dec=mesdec.flatten(),
+                      unit='degree', frame='icrs')
+    m = sfdmap.SFDMap(args.sfddata)
+    mesebv = m.ebv(coords, unit='degree')
+    if save:
+        print('Saving ebv to ebv_%i.csv' % res)
+        df = pd.DataFrame(
+            {'ra': mesra.flatten(), 'dec': mesdec.flatten(), 'ebv': mesebv})
+        df.to_csv(os.path.join(args.workdir, 'ebv_%i.csv' % res), index=False)
+    return coords, mesebv
 
 
 def plot_foot(args):
@@ -73,6 +97,12 @@ def plot_foot(args):
         print('Ploting 2MASS...')
         ax.scatter(xpos, ypos, c=np.log10(h.T), s=10,
                    marker='H', edgecolor='None', cmap='Greys')
+    else:
+        coords, ebv = get_ebv(args, res=200, save=True)
+        ax.scatter(coords.ra.wrap_at(180 * u.deg).radian,
+                   coords.dec.radian,
+                   c=ebv,
+                   cmap='gray_r', marker='H', s=5, vmin=-.5, vmax=10)
 
     print('Reading splus table...')
     t = ascii.read(args.splusfoot, format='csv', fast_reader=False)
@@ -80,38 +110,51 @@ def plot_foot(args):
     c = SkyCoord(ra=t['RA'], dec=t['DEC'], unit=(u.hour, u.deg), frame='icrs')
     ra_rad = c.ra.wrap_at(180 * u.deg).radian
     dec_rad = c.dec.radian
+    ax.scatter(ra_rad, dec_rad,
+               marker='H', s=8, color='gray', alpha=0.5)
 
-    mask_obs = (t['STATUS'] == 1) | (t['STATUS'] == 2) | (
-        t['STATUS'] == 4) | (t['STATUS'] == 5) | (t['STATUS'] == 6)
-    lbl = r'$\mathrm{Observed:\ %i}$' % mask_obs.sum()
-    ax.scatter(ra_rad[mask_obs], dec_rad[mask_obs],
-               marker='H', s=8, color='limegreen', label=lbl)
-    mask_foo = (t['STATUS'] == -1) | (t['STATUS'] == -
-                                      2) | (t['STATUS'] == 0) | (t['STATUS'] == 3)
-    lbl = r'$\mathrm{To\ be\ observed:\ %i}$' % mask_foo.sum()
-    ax.scatter(ra_rad[mask_foo], dec_rad[mask_foo],
-               marker='H', s=8, color='r', label=lbl)
+    showobserved = False
+    if showobserved:
+        mask_obs = (t['STATUS'] == 1) | (t['STATUS'] == 2) | (
+            t['STATUS'] == 4) | (t['STATUS'] == 5) | (t['STATUS'] == 6)
+        lbl = r'$\mathrm{Observed:\ %i}$' % mask_obs.sum()
+        ax.scatter(ra_rad[mask_obs], dec_rad[mask_obs],
+                   marker='H', s=8, color='limegreen', label=lbl)
+        mask_foo = (t['STATUS'] == -1) | (t['STATUS'] == -
+                                          2) | (t['STATUS'] == 0) | (t['STATUS'] == 3)
+        lbl = r'$\mathrm{To\ be\ observed:\ %i}$' % mask_foo.sum()
+        ax.scatter(ra_rad[mask_foo], dec_rad[mask_foo],
+                   marker='H', s=8, color='r', label=lbl)
 
     # # overlay
-    # ct = ascii.read(
-    #     '/home/herpich/Downloads/info_cls_shiftgap_iter_10.0hmpcf_nrb.dat', format='fast_no_header')
-    # ctc = SkyCoord(ra=ct['col2'], dec=ct['col3'],
-    #                unit=(u.deg, u.deg), frame='icrs')
-    # ra_radc = ctc.ra.wrap_at(180 * u.deg).radian
-    # dec_radc = ctc.dec.radian
-    # ax.scatter(ra_radc, dec_radc, marker='H',
-    #            s=12, color='blue', label='Claudia')
+    if args.overlaycat is not None:
+        try:
+            ct = ascii.read(args.overlaycat, format='csv')
+            ctc = SkyCoord(ra=ct['RA'], dec=ct['DEC'],
+                           unit=(u.hour, u.deg), frame='icrs')
+        except (UnicodeDecodeError, OSError):
+            ct = ascii.read(args.overlaycat, format='fast_no_header')
+            ctc = SkyCoord(ra=ct['col2'], dec=ct['col3'],
+                           unit=(u.hour, u.deg), frame='icrs')
+        else:
+            print('Overlay catalogue not found or not in a valid format')
+        ra_radc = ctc.ra.wrap_at(180 * u.deg).radian
+        dec_radc = ctc.dec.radian
+        ax.scatter(ra_radc, dec_radc, marker='H',
+                   s=12, color='blue', label=r'$\mathrm{DR3: %.1f\ sq\ deg}$' % (len(ct) * 1.98))
 
     plt.setp(ax.get_xticklabels(), fontsize=18)
     plt.setp(ax.get_yticklabels(), fontsize=18)
     plt.legend(loc='upper right', scatterpoints=1, markerscale=3, shadow=True,
                bbox_to_anchor=[1.02, 1.07], fancybox=True, fontsize=20)
-    plt.subplots_adjust(top=0.95, bottom=0.05, right=0.9, left=0.05)
+    # plt.subplots_adjust(top=0.95, bottom=0.05, right=0.9, left=0.05)
     plt.grid(True)
+    plt.tight_layout()
 
-    pathtosave = './splus_footprint.png'
-    print('Saving fig %s...' % pathtosave)
-    plt.savefig(pathtosave, format='png', dpi=300)
+    if args.savefig:
+        pathtosave = os.path.join(args.workdir, 'splus_footprint.png')
+        print('Saving fig %s...' % pathtosave)
+        plt.savefig(pathtosave, format='png', dpi=300)
     plt.show()
 
 
