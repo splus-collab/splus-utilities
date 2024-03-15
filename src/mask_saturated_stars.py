@@ -257,8 +257,16 @@ def main():
             plot_stars(args, objects2plot)
             return
         else:
-            splus_cat = fits.open(os.path.join(
-                args.datadir, args.spluscat))[2].data
+            if args.spluscat is None:
+                print(
+                    'No S-PLUS catalog provided. Add --spluscat [filename] to the command line')
+                return
+            if os.path.isfile(os.path.join(args.datadir, args.spluscat)):
+                splusfilename = os.path.join(args.datadir, args.spluscat)
+                splus_cat = fits.open(splusfilename)[2].data
+            else:
+                print('No S-PLUS catalog provided')
+                return
             field_coords = sfoot[sfoot['NAME'] == fieldname]
             gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
             objects2plot = get_stars(gsccat, imagename, splus_cat)
