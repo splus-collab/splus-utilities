@@ -98,9 +98,9 @@ def plot_gaia_splus(
 
     ax_scatter = fig.add_axes(rect_scatter)
     ax_scatter.scatter(splusdetect['RA'], splusdetect['DEC'],
-                       s=30, c='gray', label='SPLUS all', alpha=0.5)
+                       s=10, c='gray', label='SPLUS all', alpha=0.5)
     ax_scatter.scatter(gaia_stars['RAJ2000'], gaia_stars['DEJ2000'],
-                       s=25, c='g', label='Gaia all', alpha=0.5)
+                       s=5, c='g', label='Gaia all', alpha=0.5)
     ax_scatter.scatter(gaia_matches['RAJ2000'], gaia_matches['DEJ2000'],
                        s=20, c='r', label='Gaia mathces')
     ax_scatter.scatter(splus_matches['RA'][mask], splus_matches['DEC'][mask],
@@ -140,6 +140,10 @@ def plot_gaia_splus(
     ax_bottom_right_pad.legend(loc='upper left', fontsize=8)
 
     plt.show()
+    return {'spluscat': splusdetect,
+            'gaiacat': gaia_stars,
+            'gaiamatches': gaia_matches,
+            'splusmatches': splus_matches}
 
 
 def main(args):
@@ -152,10 +156,11 @@ def main(args):
         gaia_stars = get_gaia_stars(coords, radius=args.radius)
         splusall, gaia_stars, gaia_matches, splus_matches = match_gaia_splus(
             args, gaia_stars, sfield=field)
-        plot_gaia_splus(args, splusall, gaia_stars,
-                        gaia_matches, splus_matches, fieldname=field)
+        output = plot_gaia_splus(args, splusall, gaia_stars,
+                                 gaia_matches, splus_matches, fieldname=field)
+        return output
 
 
 if __name__ == '__main__':
     args = get_args()
-    main(args)
+    output = main(args)
