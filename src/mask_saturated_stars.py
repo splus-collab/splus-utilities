@@ -35,27 +35,27 @@ def get_args():
         description='Apply masks to the SPLUS catalogs')
     parser.add_argument('--workdir', type=str, default=os.getcwd(),
                         help='Working directory')
-    parser.add_argument('--datadir', type=str, default=os.getcwd(),
+    args, _ = parser.parse_known_args()
+    parser.add_argument('--datadir', type=str, default=args.workdir,
                         help='Directory with the SPLUS catalogs')
+    parser.add_argument('--imgdir', type=str, default=args.workdir,
+                        help='Directory with the SPLUS images')
+    parser.add_argument('--outdir', type=str, default=args.workdir,
+                        help='Output directory')
     parser.add_argument('--splusfootprint', type=str,
                         help='S-PLUS footprint')
     parser.add_argument('--cat_stars', type=str,
-                        help='Catalog of stars')
+                        help='Catalogue of stars. If None, will query specified by ref2use')
+    parser.add_argument('--ref2use', type=str, default='gsc',
+                        help='Reference catalogue to use')
+    parser.add_argument('--field', type=str,
+                        help='Field to process')
     parser.add_argument('--listfields', type=str,
                         help='List of fields to process')
-    parser.add_argument('--photoflag', type=str,
-                        help='Photometric flag')
-    parser.add_argument('--field', type=str,
-                        help='Field name')
-    parser.add_argument('--ref2use', type=str, default='gsc',
-                        help='Reference catalog to use')
     parser.add_argument('--spluscat', type=str,
-                        help='S-PLUS catalog')
+                        help='S-PLUS catalogue prefix to serach for')
     parser.add_argument('--nprocs', type=int, default=1,
                         help='Number of processes to use')
-    args, _ = parser.parse_known_args()
-    parser.add_argument('--outdir', type=str, default=args.workdir,
-                        help='Output directory')
     parser.add_argument('--showfig', action='store_true',
                         help='Show figure')
     parser.add_argument('--savefig', action='store_true',
@@ -105,10 +105,15 @@ def query_gsc(
 
 def get_stars(
     gsccat: pd.DataFrame,
-    image: str,
+    image: str | None = None,
     spluscat: pd.DataFrame | None = None,
 ):
-    f = fits.open(image)
+    if image is None:
+        raise ValueError('No image provided')
+    try:
+        f = fits.open(image)
+    except FileNotFoundError:
+        raise FileNotFoundError('Image not found')
     mean, median, std = sigma_clipped_stats(f[1].data, sigma=3.0)
     print('mean, median, std:', mean, median, std)
     wcs = WCS(f[1].header)
@@ -253,10 +258,15 @@ def process_field(
     fieldname: str,
 ):
     cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
+    if len(cats2proc) == 0:
+        print('No S-PLUS catalog found for field:', fieldname)
+        return
+    # TODO: need to check how the images are organized
+    imagename = os.path.join(args.imgdir, f'{fieldname}_R_swp.fz')
     field_coords = sfoot[sfoot['NAME'] == fieldname]
     gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
     for cat in cats2proc:
-        objects2plot = get_stars(gsccat, cat)
+        objects2plot = get_stars(gsccat, image=imagename, spluscat=cat)
         plot_stars(args, objects2plot)
         objects2plot = make_masks(args, objects2plot)
         objects2plot = check_distance_to_border(objects2plot, sfoot, fieldname)
@@ -286,11 +296,18 @@ def main():
         with pd.read_csv(args.listfields) as f:
             fields = f['NAME']
             fields = [field.replace('-', '_') for field in fields]
-        pool = multiprocessing.Pool(args.nprocs)
+        if args.is_test:
+            fields = fields[:1]
+            nprocs = 1
+        else:
+            nprocs = args.nprocs
+        pool = multiprocessing.Pool(nprocs)
         proc_args = zip(repeat(args), repeat(sfoot), fields)
         pool.map(process_field, proc_args)
         pool.close()
         pool.join()
+    else:
+        raise ValueError('No field or list of fields provided')
 
 
 if __name__ == '__main__':
