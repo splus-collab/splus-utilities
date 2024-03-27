@@ -18,6 +18,9 @@ from astropy.stats import sigma_clipped_stats
 from astroquery.vizier import Vizier
 import pandas as pd
 import matplotlib.pyplot as plt
+import glob
+import multiprocessing
+from itertools import repeat
 
 plt.rcParams.update({
     "text.usetex": True,
@@ -38,8 +41,8 @@ def get_args():
                         help='S-PLUS footprint')
     parser.add_argument('--cat_stars', type=str,
                         help='Catalog of stars')
-    parser.add_argument('--catfile', type=str,
-                        help='Catalog of objects')
+    parser.add_argument('--listfields', type=str,
+                        help='List of fields to process')
     parser.add_argument('--photoflag', type=str,
                         help='Photometric flag')
     parser.add_argument('--field', type=str,
@@ -48,6 +51,8 @@ def get_args():
                         help='Reference catalog to use')
     parser.add_argument('--spluscat', type=str,
                         help='S-PLUS catalog')
+    parser.add_argument('--nprocs', type=int, default=1,
+                        help='Number of processes to use')
     args, _ = parser.parse_known_args()
     parser.add_argument('--outdir', type=str, default=args.workdir,
                         help='Output directory')
@@ -237,52 +242,55 @@ def check_distance_to_border(
     field_coords = SkyCoord(ra=field_coords['RA'], dec=field_coords['DEC'], unit=(
         u.deg, u.deg))
     scoords = objects2plot['splus']['coords']
-    objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 10 * u.arcsec) |
-                            (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 10 * u.arcsec)] += 2
+    objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 30 * u.arcsec) |
+                            (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 30 * u.arcsec)] += 2
     return objects2plot
 
 
-def main():
-
-    args = get_args()
-    sfoot = get_splusfootprint(args)
-    fieldname = args.field.replace(
-        '-', '_') if 'STRIPE82' in args.field else args.field
-    imagename = os.path.join(args.datadir, f'{args.field}_R_swp.fz')
-    if args.ref2use in ['gsc', 'GSC']:
-        if args.istest:
-            field_coords = sfoot[sfoot['NAME'] == fieldname]
-            gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
-            objects2plot = get_stars(gsccat, imagename)
-            plot_stars(args, objects2plot)
-            return
-        else:
-            if args.spluscat is None:
-                print(
-                    'No S-PLUS catalog provided. Add --spluscat [filename] to the command line')
-                return
-            if os.path.isfile(os.path.join(args.datadir, args.spluscat)):
-                splusfilename = os.path.join(args.datadir, args.spluscat)
-                splus_cat = fits.open(splusfilename)[2].data
-            else:
-                print('No S-PLUS catalog provided')
-                return
-            field_coords = sfoot[sfoot['NAME'] == fieldname]
-            gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
-            objects2plot = get_stars(gsccat, imagename, splus_cat)
-            plot_stars(args, objects2plot)
-
+def process_field(
+    args: argparse.Namespace,
+    sfoot: pd.DataFrame,
+    fieldname: str,
+):
+    cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
+    field_coords = sfoot[sfoot['NAME'] == fieldname]
+    gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
+    for cat in cats2proc:
+        objects2plot = get_stars(gsccat, cat)
+        plot_stars(args, objects2plot)
         objects2plot = make_masks(args, objects2plot)
-
         objects2plot = check_distance_to_border(objects2plot, sfoot, fieldname)
         newdf = pd.DataFrame()
         newdf['RA'] = objects2plot['splus']['coords'].ra.value
         newdf['Dec'] = objects2plot['splus']['coords'].dec.value
         newdf['MASK'] = objects2plot['masksat']
-        print('Writing masked catalog', os.path.join(
-            args.outdir, f'{args.field}_mask.csv'))
-        newdf.to_csv(os.path.join(args.outdir, f'{args.field}_mask.csv'))
+        print('Writing mask catalogue to disk:', os.path.join(
+            args.outdir, f'{fieldname}_mask.csv'))
+        newdf.to_csv(os.path.join(
+            args.outdir, f'{cat.split("/")[-1].replace(".fits", "_mask.csv")}'))
+
     return
+
+
+def main():
+
+    args = get_args()
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
+    sfoot = get_splusfootprint(args)
+    if args.field is not None:
+        fieldname = args.field.replace(
+            '-', '_')
+        process_field(args, sfoot, fieldname)
+    elif args.listfields is not None:
+        with pd.read_csv(args.listfields) as f:
+            fields = f['NAME']
+            fields = [field.replace('-', '_') for field in fields]
+        pool = multiprocessing.Pool(args.nprocs)
+        proc_args = zip(repeat(args), repeat(sfoot), fields)
+        pool.map(process_field, proc_args)
+        pool.close()
+        pool.join()
 
 
 if __name__ == '__main__':
