@@ -61,7 +61,7 @@ def get_args():
     parser.add_argument('--savefig', action='store_true',
                         help='Save figure')
     parser.add_argument('--istest', action='store_true',
-                        help='Test mode')
+                        help='Test mode. Runs only one field')
 
     if len(sys.argv) < 2:
         parser.print_help()
@@ -75,9 +75,22 @@ def get_splusfootprint(
 ):
     """
     Get the S-PLUS footprint
+
+    Parameters
+    ----------
+    args: argparse.Namespace
+        Arguments
+
+    Returns
+    -------
+    footprint: pd.DataFrame
+        S-PLUS footprint
     """
     footppath = os.path.join(args.splusfootprint)
-    footprint = pd.read_csv(footppath, delimiter=',')
+    try:
+        footprint = pd.read_csv(footppath, delimiter=',')
+    except FileNotFoundError:
+        raise FileNotFoundError('S-PLUS footprint not found')
 
     return footprint
 
@@ -89,6 +102,20 @@ def query_gsc(
 ):
     """
     Query the GSC1.2 catalog using the Vizier service
+
+    Parameters
+    ----------
+    ra: float
+        Right ascension in degrees
+    dec: float
+        Declination in degrees
+    radius: float
+        Radius in degrees
+
+    Returns
+    -------
+    result: pd.DataFrame
+        Result of the query
     """
 
     v = Vizier(columns=['RAJ2000', 'DEJ2000', 'Pmag', 'e_Pmag', 'PosErr',
@@ -108,6 +135,24 @@ def get_stars(
     image: str | None = None,
     spluscat: pd.DataFrame | None = None,
 ):
+    """
+    Get the stars from the GSC1.2 catalog and the S-PLUS catalogue
+
+    Parameters
+    ----------
+
+    gsccat: pd.DataFrame
+        GSC1.2 catalog
+    image: str
+        Image to plot
+    spluscat: pd.DataFrame
+        S-PLUS catalogue
+
+    Returns
+    -------
+    objects2plot: dict
+        Dictionary with the objects to plot
+    """
     if image is None:
         raise ValueError('No image provided')
     try:
@@ -135,11 +180,21 @@ def get_stars(
                             'mag': gsccat['Pmag'].value.data},
                     }
     if spluscat is not None:
-        mask = spluscat['MAG_AUTO'] < 16
+        mask = np.ones(len(spluscat), dtype=bool)
+        # mask = spluscat['MAG_AUTO'] < 16
         # mask &= spluscat['FLAGS'] != 0
         # mask &= spluscat['CLASS_STAR'] > 0.7
-        splus_coords = SkyCoord(ra=spluscat['ALPHA_J2000'],
-                                dec=spluscat['DELTA_J2000'],
+        if 'ALPHA_J2000' and 'DELTA_J2000' in spluscat.columns:
+            sra = spluscat['ALPHA_J2000']
+            sdec = spluscat['DELTA_J2000']
+        elif 'RA' and 'DEC' in spluscat.columns:
+            sra = spluscat['RA']
+            sdec = spluscat['DEC']
+        else:
+            raise ValueError(
+                'No coordinates columns found in S-PLUS catalogue')
+        splus_coords = SkyCoord(ra=sra,
+                                dec=sdec,
                                 unit=(u.deg, u.deg), frame='icrs')
         spixcoords = sky2pix(splus_coords, wcs)
         objects2plot['splus'] = {'coords': splus_coords,
@@ -156,6 +211,17 @@ def plot_stars(
     args: argparse.Namespace,
     objects2plot: dict,
 ):
+    """
+    Plot the stars in the image
+
+    Parameters
+    ----------
+    args: argparse.Namespace
+        Arguments
+    objects2plot: dict
+        Dictionary with the objects to plot
+    """
+
     data = objects2plot['image'][1].data
     wcs = objects2plot['wcs']
     pixcoords = objects2plot['gsc']['pixcoords']
@@ -218,6 +284,21 @@ def make_masks(
     args: argparse.Namespace,
     objects2plot: dict,
 ):
+    """
+    Make the masks for the saturated stars
+
+    Parameters
+    ----------
+    args: argparse.Namespace
+        Arguments
+    objects2plot: dict
+
+    Returns
+    -------
+    objects2plot: dict
+        Dictionary with the objects to plot
+    """
+
     if 'splus' in objects2plot:
         scoords = objects2plot['splus']['coords']
     else:
@@ -242,10 +323,25 @@ def check_distance_to_border(
 ):
     """
     Check the distance of the objects to the border of the field
+
+    Parameters
+    ----------
+    objects2plot: dict
+        Dictionary with the objects to plot
+    sfoot: pd.DataFrame
+        S-PLUS footprint
+    fieldname: str
+        Field name
+
+    Returns
+    -------
+    objects2plot: dict
+        Dictionary with the objects to plot
     """
     field_coords = sfoot[sfoot['NAME'] == fieldname]
-    field_coords = SkyCoord(ra=field_coords['RA'], dec=field_coords['DEC'], unit=(
-        u.deg, u.deg))
+    field_coords = SkyCoord(ra=field_coords['RA'],
+                            dec=field_coords['DEC'],
+                            unit=(u.deg, u.deg))
     scoords = objects2plot['splus']['coords']
     objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 30 * u.arcsec) |
                             (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 30 * u.arcsec)] += 2
@@ -257,6 +353,18 @@ def process_field(
     sfoot: pd.DataFrame,
     fieldname: str,
 ):
+    """
+    Process the field
+
+    Parameters
+    ----------
+    args: argparse.Namespace
+        Arguments
+    sfoot: pd.DataFrame
+        S-PLUS footprint
+    fieldname: str
+        Field name
+    """
     cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
     if len(cats2proc) == 0:
         print('No S-PLUS catalog found for field:', fieldname)
