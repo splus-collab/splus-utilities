@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import glob
 from itertools import repeat
 from multiprocessing import Pool, freeze_support
+import gc
 
 plt.rcParams.update({
     "text.usetex": True,
@@ -91,7 +92,9 @@ def get_splusfootprint(
     try:
         footprint = pd.read_csv(footppath, delimiter=',')
     except FileNotFoundError:
-        raise FileNotFoundError('S-PLUS footprint not found')
+        raise FileNotFoundError('S-PLUS footprint file not found...')
+
+    gc.collect()
 
     return footprint
 
@@ -134,7 +137,7 @@ def query_gsc(
 def get_stars(
     gsccat: pd.DataFrame,
     image: str = 'None',
-    scatname: str = None,
+    scatname: str = 'None',
 ):
     """
     Get the stars from the GSC1.2 catalog and the S-PLUS catalogue
@@ -182,31 +185,32 @@ def get_stars(
                             'colour': 'red',
                             'mag': gsccat['Pmag'].value.data},
                     }
-    if spluscat is not None:
-        mask = np.ones(len(spluscat), dtype=bool)
-        # mask = spluscat['MAG_AUTO'] < 16
-        # mask &= spluscat['FLAGS'] != 0
-        # mask &= spluscat['CLASS_STAR'] > 0.7
-        if ('ALPHA_J2000' in spluscat.columns.names) and ('DELTA_J2000' in spluscat.columns.names):
-            sra = spluscat['ALPHA_J2000']
-            sdec = spluscat['DELTA_J2000']
-        elif ('RA' in spluscat.columns.names) and ('DEC' in spluscat.columns.names):
-            sra = spluscat['RA']
-            sdec = spluscat['DEC']
-        else:
-            raise ValueError(
-                'No coordinates columns found in S-PLUS catalogue')
-        splus_coords = SkyCoord(ra=sra,
-                                dec=sdec,
-                                unit=(u.deg, u.deg), frame='icrs')
-        spixcoords = sky2pix(splus_coords, wcs)
-        objects2plot['splus'] = {'coords': splus_coords,
-                                 'rad': 5,
-                                 'pixcoords': spixcoords,
-                                 'colour': 'blue',
-                                 'mask': mask}
+    mask = np.ones(len(spluscat), dtype=bool)
+    # mask = spluscat['MAG_AUTO'] < 16
+    # mask &= spluscat['FLAGS'] != 0
+    # mask &= spluscat['CLASS_STAR'] > 0.7
+    if ('ALPHA_J2000' in spluscat.columns.names) and ('DELTA_J2000' in spluscat.columns.names):
+        sra = spluscat['ALPHA_J2000']
+        sdec = spluscat['DELTA_J2000']
+    elif ('RA' in spluscat.columns.names) and ('DEC' in spluscat.columns.names):
+        sra = spluscat['RA']
+        sdec = spluscat['DEC']
+    else:
+        raise ValueError(
+            'No coordinates columns found in S-PLUS catalogue')
+    splus_coords = SkyCoord(ra=sra,
+                            dec=sdec,
+                            unit=(u.deg, u.deg), frame='icrs')
+    spixcoords = sky2pix(splus_coords, wcs)
+    objects2plot['splus'] = {'coords': splus_coords,
+                             'rad': 5,
+                             'pixcoords': spixcoords,
+                             'colour': 'blue',
+                             'mask': mask}
 
     objects2plot['masksat'] = None
+    gc.collect()
+
     return objects2plot
 
 
@@ -225,66 +229,74 @@ def plot_stars(
         Dictionary with the objects to plot
     """
 
-    data = objects2plot['image'][1].data
-    wcs = objects2plot['wcs']
-    pixcoords = objects2plot['gsc']['pixcoords']
-    gscrad = objects2plot['gsc']['rad']
-    gscregions = [CirclePixelRegion(center=PixCoord(x, y), radius=z)
-                  for (x, y), z in zip(pixcoords, gscrad)]
-
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(111, projection=wcs)
-    data[data < objects2plot['std']] = 0
-    ax.imshow(data, origin='lower', vmin=0, vmax=3.5)
-    print('Plotting stars')
-    for reg, mag in zip(gscregions, objects2plot['gsc']['mag']):
-        reg.plot(ax=ax, color='c', lw=3)
-        ax.text(reg.center.x, reg.center.y, f'{mag:.2f}', color='white')
     if 'splus' in objects2plot and objects2plot['masksat'] is None:
-        spixcoords = objects2plot['splus']['pixcoords']
-        mask = objects2plot['splus']['mask']
-        splusregions = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
-                        for x, y in zip(spixcoords[0][mask], spixcoords[1][mask])]
-        for reg in splusregions:
-            reg.plot(ax=ax, color='blue', lw=3)
         outputname = os.path.join(
             args.workdir, objects2plot['catname'].strip('.fits') + '_splus.png')
     elif 'splus' in objects2plot and objects2plot['masksat'] is not None:
-        spixcoords = objects2plot['splus']['pixcoords']
-        mask = objects2plot['masksat']
-        masked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
-                       for x, y in zip(spixcoords[0][mask == 1], spixcoords[1][mask == 1])]
-        for reg in masked_regs:
-            reg.plot(ax=ax, color='r', lw=3)
-        unmasked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
-                         for x, y in zip(spixcoords[0][mask == 0], spixcoords[1][mask == 0])]
-        for reg in unmasked_regs:
-            reg.plot(ax=ax, color='forestgreen', lw=3)
         outputname = os.path.join(
             args.workdir, objects2plot['catname'].strip('.fits') + '_masked.png')
     elif 'splus' not in objects2plot:
-        print('No S-PLUS catalog provided')
         outputname = os.path.join(
             args.workdir, objects2plot['catname'].strip('.fits') + '_gsc.png')
     else:
-        print('No mask provided')
         outputname = os.path.join(
             args.workdir, objects2plot['catname'].strip('.fits') + '_nomask.png')
+    if not os.path.exists(outputname):
+        data = objects2plot['image'][1].data
+        wcs = objects2plot['wcs']
+        pixcoords = objects2plot['gsc']['pixcoords']
+        gscrad = objects2plot['gsc']['rad']
+        gscregions = [CirclePixelRegion(center=PixCoord(x, y), radius=z)
+                      for (x, y), z in zip(pixcoords, gscrad)]
 
-    ax.set_xlabel('RA')
-    ax.set_ylabel('Dec')
-    # plt.tight_layout()
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection=wcs)
+        data[data < objects2plot['std']] = 0
+        ax.imshow(data, origin='lower', vmin=0, vmax=3.5)
+        print('Plotting stars')
+        for reg, mag in zip(gscregions, objects2plot['gsc']['mag']):
+            reg.plot(ax=ax, color='c', lw=3)
+            ax.text(reg.center.x, reg.center.y, f'{mag:.2f}', color='white')
+        if 'splus' in objects2plot and objects2plot['masksat'] is None:
+            spixcoords = objects2plot['splus']['pixcoords']
+            mask = objects2plot['splus']['mask']
+            splusregions = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
+                            for x, y in zip(spixcoords[0][mask], spixcoords[1][mask])]
+            for reg in splusregions:
+                reg.plot(ax=ax, color='blue', lw=3)
+        elif 'splus' in objects2plot and objects2plot['masksat'] is not None:
+            spixcoords = objects2plot['splus']['pixcoords']
+            mask = objects2plot['masksat']
+            masked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
+                           for x, y in zip(spixcoords[0][mask == 1], spixcoords[1][mask == 1])]
+            for reg in masked_regs:
+                reg.plot(ax=ax, color='r', lw=3)
+            unmasked_regs = [CirclePixelRegion(center=PixCoord(x, y), radius=3)
+                             for x, y in zip(spixcoords[0][mask == 0], spixcoords[1][mask == 0])]
+            for reg in unmasked_regs:
+                reg.plot(ax=ax, color='forestgreen', lw=3)
+        elif 'splus' not in objects2plot:
+            print('No S-PLUS catalog provided')
+        else:
+            print('No mask provided')
 
-    if args.savefig:
-        plt.savefig(outputname, dpi=300)
+        ax.set_xlabel('RA')
+        ax.set_ylabel('Dec')
+
+        if args.savefig:
+            plt.savefig(outputname, dpi=300)
+            if args.showfig:
+                plt.show()
+            else:
+                plt.close()
         if args.showfig:
             plt.show()
         else:
             plt.close()
-    if args.showfig:
-        plt.show()
     else:
-        plt.close()
+        print('File already exists. Skipping...')
+
+    gc.collect()
 
 
 def make_masks(
@@ -320,6 +332,8 @@ def make_masks(
     if args.showfig or args.savefig:
         plot_stars(args, objects2plot)
 
+    gc.collect()
+
     return objects2plot
 
 
@@ -353,6 +367,9 @@ def check_distance_to_border(
     scoords = objects2plot['splus']['coords']
     objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 30 * u.arcsec) |
                             (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 30 * u.arcsec)] += 2
+
+    gc.collect()
+
     return objects2plot
 
 
@@ -381,18 +398,24 @@ def process_field(
     field_coords = sfoot[sfoot['NAME'] == fieldname]
     gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
     for catname in cats2proc:
-        objects2plot = get_stars(gsccat, image=imagename, scatname=catname)
-        plot_stars(args, objects2plot)
-        objects2plot = make_masks(args, objects2plot)
-        objects2plot = check_distance_to_border(objects2plot, sfoot, fieldname)
-        newdf = pd.DataFrame()
-        newdf['RA'] = objects2plot['splus']['coords'].ra.value
-        newdf['Dec'] = objects2plot['splus']['coords'].dec.value
-        newdf['MASK'] = objects2plot['masksat']
         outcat = os.path.join(
             args.outdir, f'{catname.split("/")[-1].replace(".fits", "_mask.csv")}')
-        print('Writing mask catalogue to disk:', outcat)
-        newdf.to_csv(outcat)
+        if not os.path.exists(outcat):
+            objects2plot = get_stars(gsccat, image=imagename, scatname=catname)
+            plot_stars(args, objects2plot)
+            objects2plot = make_masks(args, objects2plot)
+            objects2plot = check_distance_to_border(
+                objects2plot, sfoot, fieldname)
+            newdf = pd.DataFrame()
+            newdf['RA'] = objects2plot['splus']['coords'].ra.value
+            newdf['Dec'] = objects2plot['splus']['coords'].dec.value
+            newdf['MASK'] = objects2plot['masksat']
+            print('Writing mask catalogue to disk:', outcat)
+            newdf.to_csv(outcat)
+        else:
+            print('File already exists. Skipping...')
+
+    gc.collect()
 
     return
 
@@ -415,8 +438,8 @@ def main():
             fields = f['Field']
         fields = [field.replace('_', '-') for field in fields]
         if args.istest:
-            fields = fields[:1]
-            nprocs = 1
+            fields = fields[:6]
+            nprocs = 3
         else:
             nprocs = args.nprocs
         pool = Pool(nprocs)
@@ -425,6 +448,10 @@ def main():
         pool.join()
     else:
         raise ValueError('No field or list of fields provided')
+
+    gc.collect()
+
+    return
 
 
 if __name__ == '__main__':
