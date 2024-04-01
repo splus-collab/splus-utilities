@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 # This script is part of the set of tools used to prepare the S-PLUS data
 # Current version: prepared by Herpich F. R., March, 2024 - fabio.herpich@ast.cam.ac.uk
-# Original version: prepared by Luisa Buzzo, 2021, which was used to produce masks for the S-PLUS DR3
+# Original version: prepared by Luisa Buzzo, 2021, which was used to produce
+# the masks for the S-PLUS DR3
 
 import os
 import sys
@@ -19,8 +20,8 @@ from astroquery.vizier import Vizier
 import pandas as pd
 import matplotlib.pyplot as plt
 import glob
-import multiprocessing
 from itertools import repeat
+from multiprocessing import Pool, freeze_support
 
 plt.rcParams.update({
     "text.usetex": True,
@@ -132,8 +133,8 @@ def query_gsc(
 
 def get_stars(
     gsccat: pd.DataFrame,
-    image: str | None = None,
-    spluscat: pd.DataFrame | None = None,
+    image: str = 'None',
+    scatname: str = None,
 ):
     """
     Get the stars from the GSC1.2 catalog and the S-PLUS catalogue
@@ -153,12 +154,13 @@ def get_stars(
     objects2plot: dict
         Dictionary with the objects to plot
     """
-    if image is None:
+    if image == 'None':
         raise ValueError('No image provided')
     try:
         f = fits.open(image)
     except FileNotFoundError:
         raise FileNotFoundError('Image not found')
+    spluscat = fits.open(scatname)[1].data
     mean, median, std = sigma_clipped_stats(f[1].data, sigma=3.0)
     print('mean, median, std:', mean, median, std)
     wcs = WCS(f[1].header)
@@ -170,7 +172,8 @@ def get_stars(
         np.e ** (-(gsccat['Pmag'] - (-11.1)) ** 2/(2 * 6.2 ** 2))
     gscrad[gscrad < 30] = 30
 
-    objects2plot = {'image': f,
+    objects2plot = {'catname': scatname,
+                    'image': f,
                     'wcs': wcs,
                     'std': std,
                     'gsc': {'coords': gsc_coords,
@@ -184,10 +187,10 @@ def get_stars(
         # mask = spluscat['MAG_AUTO'] < 16
         # mask &= spluscat['FLAGS'] != 0
         # mask &= spluscat['CLASS_STAR'] > 0.7
-        if 'ALPHA_J2000' and 'DELTA_J2000' in spluscat.columns:
+        if ('ALPHA_J2000' in spluscat.columns.names) and ('DELTA_J2000' in spluscat.columns.names):
             sra = spluscat['ALPHA_J2000']
             sdec = spluscat['DELTA_J2000']
-        elif 'RA' and 'DEC' in spluscat.columns:
+        elif ('RA' in spluscat.columns.names) and ('DEC' in spluscat.columns.names):
             sra = spluscat['RA']
             sdec = spluscat['DEC']
         else:
@@ -244,7 +247,8 @@ def plot_stars(
                         for x, y in zip(spixcoords[0][mask], spixcoords[1][mask])]
         for reg in splusregions:
             reg.plot(ax=ax, color='blue', lw=3)
-        outputname = os.path.join(args.workdir, args.field + '_splus.png')
+        outputname = os.path.join(
+            args.workdir, objects2plot['catname'].strip('.fits') + '_splus.png')
     elif 'splus' in objects2plot and objects2plot['masksat'] is not None:
         spixcoords = objects2plot['splus']['pixcoords']
         mask = objects2plot['masksat']
@@ -256,17 +260,20 @@ def plot_stars(
                          for x, y in zip(spixcoords[0][mask == 0], spixcoords[1][mask == 0])]
         for reg in unmasked_regs:
             reg.plot(ax=ax, color='forestgreen', lw=3)
-        outputname = os.path.join(args.workdir, args.field + '_masked.png')
+        outputname = os.path.join(
+            args.workdir, objects2plot['catname'].strip('.fits') + '_masked.png')
     elif 'splus' not in objects2plot:
         print('No S-PLUS catalog provided')
-        outputname = os.path.join(args.workdir, args.field + '_gsc.png')
+        outputname = os.path.join(
+            args.workdir, objects2plot['catname'].strip('.fits') + '_gsc.png')
     else:
         print('No mask provided')
-        outputname = os.path.join(args.workdir, args.field + '_nomask.png')
+        outputname = os.path.join(
+            args.workdir, objects2plot['catname'].strip('.fits') + '_nomask.png')
 
     ax.set_xlabel('RA')
     ax.set_ylabel('Dec')
-    plt.tight_layout()
+    # plt.tight_layout()
 
     if args.savefig:
         plt.savefig(outputname, dpi=300)
@@ -338,7 +345,8 @@ def check_distance_to_border(
     objects2plot: dict
         Dictionary with the objects to plot
     """
-    field_coords = sfoot[sfoot['NAME'] == fieldname]
+    fields = np.array([f.replace('_', '-') for f in sfoot['NAME']])
+    field_coords = sfoot[fields == fieldname]
     field_coords = SkyCoord(ra=field_coords['RA'],
                             dec=field_coords['DEC'],
                             unit=(u.deg, u.deg))
@@ -369,12 +377,11 @@ def process_field(
     if len(cats2proc) == 0:
         print('No S-PLUS catalog found for field:', fieldname)
         return
-    # TODO: need to check how the images are organized
-    imagename = os.path.join(args.imgdir, f'{fieldname}_R_swp.fz')
+    imagename = os.path.join(args.imgdir, fieldname, f'{fieldname}_R_swp.fz')
     field_coords = sfoot[sfoot['NAME'] == fieldname]
     gsccat = query_gsc(field_coords['RA'], field_coords['DEC'])
-    for cat in cats2proc:
-        objects2plot = get_stars(gsccat, image=imagename, spluscat=cat)
+    for catname in cats2proc:
+        objects2plot = get_stars(gsccat, image=imagename, scatname=catname)
         plot_stars(args, objects2plot)
         objects2plot = make_masks(args, objects2plot)
         objects2plot = check_distance_to_border(objects2plot, sfoot, fieldname)
@@ -382,10 +389,10 @@ def process_field(
         newdf['RA'] = objects2plot['splus']['coords'].ra.value
         newdf['Dec'] = objects2plot['splus']['coords'].dec.value
         newdf['MASK'] = objects2plot['masksat']
-        print('Writing mask catalogue to disk:', os.path.join(
-            args.outdir, f'{fieldname}_mask.csv'))
-        newdf.to_csv(os.path.join(
-            args.outdir, f'{cat.split("/")[-1].replace(".fits", "_mask.csv")}'))
+        outcat = os.path.join(
+            args.outdir, f'{catname.split("/")[-1].replace(".fits", "_mask.csv")}')
+        print('Writing mask catalogue to disk:', outcat)
+        newdf.to_csv(outcat)
 
     return
 
@@ -398,20 +405,22 @@ def main():
     sfoot = get_splusfootprint(args)
     if args.field is not None:
         fieldname = args.field.replace(
-            '-', '_')
+            '_', '-')
         process_field(args, sfoot, fieldname)
     elif args.listfields is not None:
-        with pd.read_csv(args.listfields) as f:
+        f = pd.read_csv(args.listfields)
+        try:
             fields = f['NAME']
-            fields = [field.replace('-', '_') for field in fields]
-        if args.is_test:
+        except KeyError:
+            fields = f['Field']
+        fields = [field.replace('_', '-') for field in fields]
+        if args.istest:
             fields = fields[:1]
             nprocs = 1
         else:
             nprocs = args.nprocs
-        pool = multiprocessing.Pool(nprocs)
-        proc_args = zip(repeat(args), repeat(sfoot), fields)
-        pool.map(process_field, proc_args)
+        pool = Pool(nprocs)
+        pool.starmap(process_field, zip(repeat(args), repeat(sfoot), fields))
         pool.close()
         pool.join()
     else:
@@ -419,4 +428,5 @@ def main():
 
 
 if __name__ == '__main__':
+    freeze_support()
     main()
