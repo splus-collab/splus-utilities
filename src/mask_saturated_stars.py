@@ -23,6 +23,7 @@ import glob
 from itertools import repeat
 from multiprocessing import Pool, freeze_support
 import gc
+import warnings
 
 plt.rcParams.update({
     "text.usetex": True,
@@ -58,6 +59,8 @@ def get_args():
                         help='S-PLUS catalogue prefix to serach for')
     parser.add_argument('--nprocs', type=int, default=1,
                         help='Number of processes to use')
+    parser.add_argument('--plotstars', action='store_true',
+                        help='Plot stars')
     parser.add_argument('--showfig', action='store_true',
                         help='Show figure')
     parser.add_argument('--savefig', action='store_true',
@@ -186,9 +189,6 @@ def get_stars(
                             'mag': gsccat['Pmag'].value.data},
                     }
     mask = np.ones(len(spluscat), dtype=bool)
-    # mask = spluscat['MAG_AUTO'] < 16
-    # mask &= spluscat['FLAGS'] != 0
-    # mask &= spluscat['CLASS_STAR'] > 0.7
     if ('ALPHA_J2000' in spluscat.columns.names) and ('DELTA_J2000' in spluscat.columns.names):
         sra = spluscat['ALPHA_J2000']
         sdec = spluscat['DELTA_J2000']
@@ -392,7 +392,7 @@ def process_field(
     """
     cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
     if len(cats2proc) == 0:
-        print('No S-PLUS catalog found for field:', fieldname)
+        warning('No S-PLUS catalog found for field:', fieldname)
         return
     imagename = os.path.join(args.imgdir, fieldname, f'{fieldname}_R_swp.fz')
     field_coords = sfoot[sfoot['NAME'] == fieldname]
@@ -402,7 +402,8 @@ def process_field(
             args.outdir, f'{catname.split("/")[-1].replace(".fits", "_mask.csv")}')
         if not os.path.exists(outcat):
             objects2plot = get_stars(gsccat, image=imagename, scatname=catname)
-            plot_stars(args, objects2plot)
+            if args.plotstars:
+                plot_stars(args, objects2plot)
             objects2plot = make_masks(args, objects2plot)
             objects2plot = check_distance_to_border(
                 objects2plot, sfoot, fieldname)
@@ -425,6 +426,8 @@ def main():
     args = get_args()
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+    if (args.showfig or args.savefig) and not args.plotstars:
+        warnings.warn('No plot requested. Will not show nor save figures')
     sfoot = get_splusfootprint(args)
     if args.field is not None:
         fieldname = args.field.replace(
