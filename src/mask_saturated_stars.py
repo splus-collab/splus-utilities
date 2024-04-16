@@ -392,8 +392,14 @@ def process_field(
     fieldname: str
         Field name
     """
-    cats2proc = glob.glob(os.path.join(
-        args.datadir, f'{fieldname}/{args.prefix}{fieldname}_*.fits'))
+    try:
+        cats2proc = glob.glob(os.path.join(
+            args.datadir, f'{fieldname}/{args.prefix}{fieldname}_*.fits'))
+    except FileNotFoundError:
+        f = open(os.path.join(args.datadir, f'{fieldname}_failed.txt'), 'w')
+        f.write('No S-PLUS catalog found for field: %s' % fieldname)
+        f.close()
+        return
     if len(cats2proc) == 0:
         warnings.warn('No S-PLUS catalog found for field: %s' % fieldname)
         return
