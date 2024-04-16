@@ -432,7 +432,7 @@ def main():
     if args.field is not None:
         fieldname = args.field.replace(
             '_', '-')
-        process_field(args, sfoot, fieldname)
+        process_field(args, sfoot, [fieldname])
     elif args.listfields is not None:
         f = pd.read_csv(args.listfields)
         try:
