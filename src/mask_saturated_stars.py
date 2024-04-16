@@ -415,7 +415,7 @@ def process_field(
             newdf['Dec'] = objects2plot['splus']['coords'].dec.value
             newdf['MASK'] = objects2plot['masksat']
             print('Writing mask catalogue to disk:', outcat)
-            newdf.to_csv(outcat)
+            newdf.to_csv(outcat, index=False)
         else:
             print('File already exists. Skipping...')
 
@@ -435,7 +435,7 @@ def main():
     if args.field is not None:
         fieldname = args.field.replace(
             '_', '-')
-        process_field(args, sfoot, [fieldname])
+        process_field(args, sfoot, fieldname)
     elif args.listfields is not None:
         f = pd.read_csv(args.listfields)
         try:
