@@ -393,7 +393,7 @@ def process_field(
         Field name
     """
     cats2proc = glob.glob(os.path.join(
-        args.datadir, f'{args.prefix}{fieldname}_*.fits'))
+        args.datadir, f'{fieldname}/{args.prefix}{fieldname}_*.fits'))
     if len(cats2proc) == 0:
         warnings.warn('No S-PLUS catalog found for field: %s' % fieldname)
         return
