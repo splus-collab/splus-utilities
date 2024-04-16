@@ -392,7 +392,7 @@ def process_field(
     """
     cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
     if len(cats2proc) == 0:
-        warnings.warn('No S-PLUS catalog found for field:', fieldname)
+        warnings.warn('No S-PLUS catalog found for field: %s' % fieldname)
         return
     imagename = os.path.join(args.imgdir, fieldname, f'{fieldname}_R_swp.fz')
     field_coords = sfoot[sfoot['NAME'] == fieldname]
