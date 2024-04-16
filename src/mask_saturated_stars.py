@@ -57,6 +57,8 @@ def get_args():
                         help='List of fields to process')
     parser.add_argument('--spluscat', type=str,
                         help='S-PLUS catalogue prefix to serach for')
+    parser.add_argument('--prefix', type=str, default='',
+                        help='Prefix for the S-PLUS catalogue')
     parser.add_argument('--nprocs', type=int, default=1,
                         help='Number of processes to use')
     parser.add_argument('--plotstars', action='store_true',
@@ -321,7 +323,7 @@ def make_masks(
     if 'splus' in objects2plot:
         scoords = objects2plot['splus']['coords']
     else:
-        raise ValueError('No S-PLUS catalog provided')
+        raise ValueError('No S-PLUS catalogue provided')
     mask = np.zeros(len(scoords), dtype=int)
     for coord, radius in zip(objects2plot['gsc']['coords'], objects2plot['gsc']['rad']):
         separation = coord.separation(scoords)
@@ -390,7 +392,8 @@ def process_field(
     fieldname: str
         Field name
     """
-    cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
+    cats2proc = glob.glob(os.path.join(
+        args.datadir, f'{args.prefix}{fieldname}_*.fits'))
     if len(cats2proc) == 0:
         warnings.warn('No S-PLUS catalog found for field: %s' % fieldname)
         return
