@@ -35,12 +35,12 @@ plt.rcParams.update({
 
 def get_args():
     parser = argparse.ArgumentParser(
-        description='Apply masks to the SPLUS catalogs')
+        description='Apply masks to the SPLUS catalogues')
     parser.add_argument('--workdir', type=str, default=os.getcwd(),
                         help='Working directory')
     args, _ = parser.parse_known_args()
     parser.add_argument('--datadir', type=str, default=args.workdir,
-                        help='Directory with the SPLUS catalogs')
+                        help='Directory with the SPLUS catalogues')
     parser.add_argument('--imgdir', type=str, default=args.workdir,
                         help='Directory with the SPLUS images')
     parser.add_argument('--outdir', type=str, default=args.workdir,
@@ -392,7 +392,7 @@ def process_field(
     """
     cats2proc = glob.glob(os.path.join(args.datadir, f'{fieldname}_*.fits'))
     if len(cats2proc) == 0:
-        warning('No S-PLUS catalog found for field:', fieldname)
+        warnings.warn('No S-PLUS catalog found for field:', fieldname)
         return
     imagename = os.path.join(args.imgdir, fieldname, f'{fieldname}_R_swp.fz')
     field_coords = sfoot[sfoot['NAME'] == fieldname]
