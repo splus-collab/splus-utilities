@@ -367,8 +367,11 @@ def check_distance_to_border(
                             dec=field_coords['DEC'],
                             unit=(u.deg, u.deg))
     scoords = objects2plot['splus']['coords']
-    objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 30 * u.arcsec) |
-                            (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 30 * u.arcsec)] += 2
+    if (len(scoords) == 0) and (len(field_coords) == 0):
+        objects2plot['masksat'] = None
+    else:
+        objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 30 * u.arcsec) |
+                                (abs(scoords.dec - field_coords.dec + 0.7 * u.deg) < 30 * u.arcsec)] += 2
 
     gc.collect()
 
@@ -416,12 +419,18 @@ def process_field(
             objects2plot = make_masks(args, objects2plot)
             objects2plot = check_distance_to_border(
                 objects2plot, sfoot, fieldname)
-            newdf = pd.DataFrame()
-            newdf['RA'] = objects2plot['splus']['coords'].ra.value
-            newdf['Dec'] = objects2plot['splus']['coords'].dec.value
-            newdf['MASK'] = objects2plot['masksat']
-            print('Writing mask catalogue to disk:', outcat)
-            newdf.to_csv(outcat, index=False)
+            if objects2plot['masksat'] is not None:
+                newdf = pd.DataFrame()
+                newdf['RA'] = objects2plot['splus']['coords'].ra.value
+                newdf['Dec'] = objects2plot['splus']['coords'].dec.value
+                newdf['MASK'] = objects2plot['masksat']
+                print('Writing mask catalogue to disk:', outcat)
+                newdf.to_csv(outcat, index=False)
+            else:
+                with open(outcat, 'w') as f:
+                    f.write('Failed to calculate masks for file %s' % catname)
+                    f.close()
+                print('Failed to calculate masks for file %s' % catname)
         else:
             print('File already exists. Skipping...')
 
