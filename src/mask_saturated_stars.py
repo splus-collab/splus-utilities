@@ -427,7 +427,7 @@ def process_field(
                 print('Writing mask catalogue to disk:', outcat)
                 newdf.to_csv(outcat, index=False)
             else:
-                with open(outcat, 'w') as f:
+                with open(outcat.replace('_mask.csv', '_failed.txt'), 'w') as f:
                     f.write('Failed to calculate masks for file %s' % catname)
                     f.close()
                 print('Failed to calculate masks for file %s' % catname)
