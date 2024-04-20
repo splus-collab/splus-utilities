@@ -367,7 +367,7 @@ def check_distance_to_border(
                             dec=field_coords['DEC'],
                             unit=(u.deg, u.deg))
     scoords = objects2plot['splus']['coords']
-    if (len(scoords) == 0) and (len(field_coords) == 0):
+    if (len(scoords) == 0) or (len(field_coords) == 0):
         objects2plot['masksat'] = None
     else:
         objects2plot['masksat'][(abs(scoords.ra - field_coords.ra + 0.7 * u.deg) < 30 * u.arcsec) |
