@@ -464,9 +464,25 @@ def main():
         else:
             nprocs = args.nprocs
         pool = Pool(nprocs)
-        pool.starmap(process_field, zip(repeat(args), repeat(sfoot), fields))
-        pool.close()
-        pool.join()
+        try:
+            pool.starmap(process_field, zip(
+                repeat(args), repeat(sfoot), fields))
+            pool.close()
+            pool.join()
+        except Exception as e:
+            print(e)
+            pool.close()
+            pool.join()
+            log_file = 'pool_exception_fail.log'
+            if not os.path.exists(log_file):
+                with open(log_file, 'w') as f:
+                    f.write(str(e))
+                    f.close()
+            else:
+                with open(log_file, 'a') as f:
+                    f.write(str(e))
+                    f.close()
+
     else:
         raise ValueError('No field or list of fields provided')
 
