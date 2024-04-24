@@ -412,7 +412,8 @@ def process_field(
     for catname in cats2proc:
         outcat = os.path.join(
             args.outdir, f'{catname.split("/")[-1].replace(".fits", "_mask.csv")}')
-        if not os.path.exists(outcat):
+        failed_cat = outcat.replace('_mask.csv', '_failed.txt')
+        if not os.path.exists(outcat) or not os.path.exists(failed_cat):
             objects2plot = get_stars(gsccat, image=imagename, scatname=catname)
             if args.plotstars:
                 plot_stars(args, objects2plot)
