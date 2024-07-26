@@ -5,6 +5,8 @@
 # Original version: prepared by Luisa Buzzo, 2021, which was used to produce
 # the masks for the S-PLUS DR3
 
+import logging
+import colorlog
 import os
 import sys
 import argparse
@@ -75,6 +77,34 @@ def get_args():
         sys.exit(1)
 
     return parser.parse_args()
+
+
+def call_logger():
+    """Configure the logger."""
+    logging.shutdown()
+    logging.root.handlers.clear()
+
+    # configure the module with colorlog
+    logger = colorlog.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # create a formatter with green color for INFO level
+    formatter = colorlog.ColoredFormatter(
+        '%(log_color)s%(levelname)s:%(name)s:%(message)s',
+        log_colors={
+            'DEBUG':    'cyan',
+            'INFO':     'blue',
+            'WARNING':  'yellow',
+            'ERROR':    'red',
+            'CRITICAL': 'red,bg_white',
+        })
+
+    # create handler and set the formatter
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+
+    # add the handler to the logger
+    logger.addHandler(ch)
 
 
 def get_splusfootprint(
@@ -163,11 +193,14 @@ def get_stars(
         Dictionary with the objects to plot
     """
     if image == 'None':
-        raise ValueError('No image provided')
-    try:
-        f = fits.open(image)
-    except FileNotFoundError:
-        raise FileNotFoundError('Image not found')
+        logging.warning('No image provided. Skipping...')
+    else:
+        logging.info('Processing image %s' % image)
+        try:
+            f = fits.open(image)
+        except FileNotFoundError:
+            logging.error('Image not found. Skipping...')
+            image = 'None'
     spluscat = fits.open(scatname)[1].data
     mean, median, std = sigma_clipped_stats(f[1].data, sigma=3.0)
     print('mean, median, std:', mean, median, std)
@@ -493,5 +526,6 @@ def main():
 
 
 if __name__ == '__main__':
+    call_logger()
     freeze_support()
     main()
