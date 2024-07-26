@@ -25,7 +25,6 @@ import glob
 from itertools import repeat
 from multiprocessing import Pool, freeze_support
 import gc
-import warnings
 
 plt.rcParams.update({
     "text.usetex": True,
@@ -57,10 +56,12 @@ def get_args():
                         help='Field to process')
     parser.add_argument('--listfields', type=str,
                         help='List of fields to process')
-    parser.add_argument('--spluscat', type=str,
-                        help='S-PLUS catalogue prefix to serach for')
+    # parser.add_argument('--spluscat', type=str,
+    #                     help='S-PLUS catalogue prefix to serach for')
     parser.add_argument('--prefix', type=str, default='',
                         help='Prefix for the S-PLUS catalogue')
+    parser.add_argument('--postfix', type=str, default='',
+                        help='Postfix for the S-PLUS catalogue')
     parser.add_argument('--nprocs', type=int, default=1,
                         help='Number of processes to use')
     parser.add_argument('--plotstars', action='store_true',
@@ -194,6 +195,7 @@ def get_stars(
     """
     if image == 'None':
         logging.warning('No image provided. Skipping...')
+        f = None
     else:
         logging.info('Processing image %s' % image)
         try:
@@ -201,14 +203,37 @@ def get_stars(
         except FileNotFoundError:
             logging.error('Image not found. Skipping...')
             image = 'None'
+            f = None
     spluscat = fits.open(scatname)[1].data
-    mean, median, std = sigma_clipped_stats(f[1].data, sigma=3.0)
-    print('mean, median, std:', mean, median, std)
-    wcs = WCS(f[1].header)
     gsc_coords = SkyCoord(ra=gsccat['RAJ2000'].value.data,
                           dec=gsccat['DEJ2000'].value.data,
                           unit=(u.deg, u.deg), frame='icrs')
-    pixcoords = np.transpose(sky2pix(gsc_coords, wcs))
+    mask = np.ones(len(spluscat), dtype=bool)
+    if ('ALPHA_J2000' in spluscat.columns.names) and ('DELTA_J2000' in spluscat.columns.names):
+        sra = spluscat['ALPHA_J2000']
+        sdec = spluscat['DELTA_J2000']
+    elif ('RA' in spluscat.columns.names) and ('DEC' in spluscat.columns.names):
+        sra = spluscat['RA']
+        sdec = spluscat['DEC']
+    else:
+        raise ValueError(
+            'No coordinates columns found in S-PLUS catalogue')
+    splus_coords = SkyCoord(ra=sra,
+                            dec=sdec,
+                            unit=(u.deg, u.deg), frame='icrs')
+
+    if f is not None:
+        mean, median, std = sigma_clipped_stats(f[1].data, sigma=3.0)
+        print('mean, median, std:', mean, median, std)
+        wcs = WCS(f[1].header)
+        pixcoords = np.transpose(sky2pix(gsc_coords, wcs))
+        spixcoords = sky2pix(splus_coords, wcs)
+    else:
+        mean, median, std = None, None, None
+        wcs = None
+        pixcoords = None
+        spixcoords = None
+
     gscrad = 19223 * \
         np.e ** (-(gsccat['Pmag'] - (-11.1)) ** 2/(2 * 6.2 ** 2))
     gscrad[gscrad < 30] = 30
@@ -223,20 +248,6 @@ def get_stars(
                             'colour': 'red',
                             'mag': gsccat['Pmag'].value.data},
                     }
-    mask = np.ones(len(spluscat), dtype=bool)
-    if ('ALPHA_J2000' in spluscat.columns.names) and ('DELTA_J2000' in spluscat.columns.names):
-        sra = spluscat['ALPHA_J2000']
-        sdec = spluscat['DELTA_J2000']
-    elif ('RA' in spluscat.columns.names) and ('DEC' in spluscat.columns.names):
-        sra = spluscat['RA']
-        sdec = spluscat['DEC']
-    else:
-        raise ValueError(
-            'No coordinates columns found in S-PLUS catalogue')
-    splus_coords = SkyCoord(ra=sra,
-                            dec=sdec,
-                            unit=(u.deg, u.deg), frame='icrs')
-    spixcoords = sky2pix(splus_coords, wcs)
     objects2plot['splus'] = {'coords': splus_coords,
                              'rad': 5,
                              'pixcoords': spixcoords,
@@ -266,16 +277,16 @@ def plot_stars(
 
     if 'splus' in objects2plot and objects2plot['masksat'] is None:
         outputname = os.path.join(
-            args.workdir, objects2plot['catname'].strip('.fits') + '_splus.png')
+            args.outdir, objects2plot['catname'].strip('.fits') + '_splus.png')
     elif 'splus' in objects2plot and objects2plot['masksat'] is not None:
         outputname = os.path.join(
-            args.workdir, objects2plot['catname'].strip('.fits') + '_masked.png')
+            args.outdir, objects2plot['catname'].strip('.fits') + '_masked.png')
     elif 'splus' not in objects2plot:
         outputname = os.path.join(
-            args.workdir, objects2plot['catname'].strip('.fits') + '_gsc.png')
+            args.outdir, objects2plot['catname'].strip('.fits') + '_gsc.png')
     else:
         outputname = os.path.join(
-            args.workdir, objects2plot['catname'].strip('.fits') + '_nomask.png')
+            args.outdir, objects2plot['catname'].strip('.fits') + '_nomask.png')
     if not os.path.exists(outputname):
         data = objects2plot['image'][1].data
         wcs = objects2plot['wcs']
@@ -311,9 +322,9 @@ def plot_stars(
             for reg in unmasked_regs:
                 reg.plot(ax=ax, color='forestgreen', lw=3)
         elif 'splus' not in objects2plot:
-            print('No S-PLUS catalog provided')
+            logging.info('No S-PLUS catalogue provided')
         else:
-            print('No mask provided')
+            logging.info('No mask provided')
 
         ax.set_xlabel('RA')
         ax.set_ylabel('Dec')
@@ -430,14 +441,14 @@ def process_field(
     """
     try:
         cats2proc = glob.glob(os.path.join(
-            args.datadir, f'{fieldname}/{args.prefix}{fieldname}_*.fits'))
+            args.datadir, f'{args.prefix}{fieldname}{args.postfix}.fits'))
     except FileNotFoundError:
         f = open(os.path.join(args.datadir, f'{fieldname}_failed.txt'), 'w')
         f.write('No S-PLUS catalog found for field: %s' % fieldname)
         f.close()
         return
     if len(cats2proc) == 0:
-        warnings.warn('No S-PLUS catalog found for field: %s' % fieldname)
+        logging.warning('No S-PLUS catalog found for field: %s' % fieldname)
         return
     imagename = os.path.join(args.imgdir, fieldname, f'{fieldname}_R_swp.fz')
     field_coords = sfoot[sfoot['NAME'] == fieldname]
@@ -479,7 +490,7 @@ def main():
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
     if (args.showfig or args.savefig) and not args.plotstars:
-        warnings.warn('No plot requested. Will not show nor save figures')
+        logging.warning('No plot requested. Will not show nor save figures')
     sfoot = get_splusfootprint(args)
     if args.field is not None:
         fieldname = args.field.replace(
