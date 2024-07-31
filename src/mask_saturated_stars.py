@@ -248,7 +248,8 @@ def get_stars(
                             'colour': 'red',
                             'mag': gsccat['Pmag'].value.data},
                     }
-    objects2plot['splus'] = {'coords': splus_coords,
+    objects2plot['splus'] = {'ID': spluscat['ID'],
+                             'coords': splus_coords,
                              'rad': 5,
                              'pixcoords': spixcoords,
                              'colour': 'blue',
@@ -466,6 +467,7 @@ def process_field(
                 objects2plot, sfoot, fieldname)
             if objects2plot['masksat'] is not None:
                 newdf = pd.DataFrame()
+                newdf['ID'] = objects2plot['splus']['ID']
                 newdf['RA'] = objects2plot['splus']['coords'].ra.value
                 newdf['Dec'] = objects2plot['splus']['coords'].dec.value
                 newdf['MASK'] = objects2plot['masksat']
