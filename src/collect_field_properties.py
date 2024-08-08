@@ -114,7 +114,23 @@ class FieldProperties:
         return depths
 
     def get_fwhm(self):
-        pass
+        fwhms = {}
+        mags_type = ['auto', 'petro', 'iso']
+        for f in self.filters.keys():
+            for m in mags_type:
+                tag = f'FWHM_{self.filters[f]}'
+                if self.catalogues[f] is None:
+                    fwhms[tag] = None
+                else:
+                    scat = self.catalogues[f]
+                    mask = scat[f'SEX_FLAGS_{self.filters[f]}'] == 0
+                    mask &= scat[f'{self.filters[f]}_{m}'] > 10
+                    mask &= scat[f'{self.filters[f]}_{m}'] < 30
+                    mask &= scat[f'FWHM_{self.filters[f]}'] > 0
+                    fwhms[tag] = np.median(
+                        scat[f'FWHM_{self.filters[f]}'][mask] * 3600)
+
+        return fwhms
 
     def get_reddening(self):
         pass
