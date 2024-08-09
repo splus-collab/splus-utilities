@@ -8,6 +8,8 @@ from astropy.io import fits
 import logging
 import pandas as pd
 import numpy as np
+import sfdmap
+from astropy.coordinates import SkyCoord
 
 
 def parseargs():
@@ -133,7 +135,24 @@ class FieldProperties:
         return fwhms
 
     def get_reddening(self):
-        pass
+        # Initialize SFD map
+        sfd = sfdmap.SFDMap(os.path.join(
+            os.getenv('HOME'), 'Documents/sfddata-master/'))
+        # get field coordinates
+        _field = self.footprint[self.footprint['NAME'] == self.field]
+        central_coords = SkyCoord(
+            ra=_field['RA'], dec=_field['DEC'], unit=('hour', 'deg'))
+        _ra = [central_coords.ra.deg]
+        _dec = [central_coords.dec.deg]
+        # additional positions around central coordinates
+        deltas = [-.35, 0, .35]
+        # make pairs with all possible combinations of deltas
+        _ = [(_ra.append(_ra[0] + i), _dec.append(_dec[0] + j))
+             for i in deltas for j in deltas]
+        scoords = SkyCoord(ra=_ra, dec=_dec, unit=('deg', 'deg'))
+        reddening = sfd.ebv(scoords).mean()
+
+        return reddening
 
     def get_sky_brightness(self):
         pass
@@ -148,4 +167,5 @@ if __name__ == '__main__':
     if args.test:
         field = idr5_fields['NAME'][0]
         fprops = FieldProperties(args, logger, field)
+        fprops.footprint = footprint
         depths, fwhms, reddening, sky_brightness = fprops.main()
