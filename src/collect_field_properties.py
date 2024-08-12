@@ -9,7 +9,8 @@ import logging
 import pandas as pd
 import numpy as np
 import sfdmap
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, get_body, EarthLocation
+from astropy.time import Time
 
 
 def parseargs():
@@ -28,6 +29,8 @@ def parseargs():
         '--footprint', help='Footprint file')
     parser.add_argument(
         '--test', action='store_true', help='Test mode')
+    parser.add_argument(
+        '--obstimefile', default=None, help='Observation time file')
 
     return parser.parse_args()
 
@@ -72,6 +75,7 @@ class FieldProperties:
                         'F861': 'J0861',
                         'Z': 'z'}
         self.catalogues = None
+        self.obstimefile = args.obstimefile
 
     def main(self):
         self.catalogues = self.get_catalogues()
@@ -80,7 +84,18 @@ class FieldProperties:
         reddening = self.get_reddening()
         sky_brightness = self.get_sky_brightness()
 
-        return depths, fwhms, reddening, sky_brightness
+        # build a Dataframe with the results where each field is a row
+        df = pd.DataFrame()
+        df['Field'] = [self.field]
+        df_depths = pd.DataFrame([depths])
+        df = pd.concat([df, df_depths], axis=1)
+        df_fwhm = pd.DataFrame([fwhms])
+        df = pd.concat([df, df_fwhm], axis=1)
+        df['reddening'] = reddening
+        df_skybrightness = pd.DataFrame([sky_brightness])
+        df = pd.concat([df, df_skybrightness], axis=1)
+
+        return df
 
     def get_catalogues(self):
         catalogues = {}
@@ -155,7 +170,28 @@ class FieldProperties:
         return reddening
 
     def get_sky_brightness(self):
-        pass
+        if self.obstimefile is None:
+            return None
+        else:
+            times4field = self.obstimefile[self.obstimefile['Field']
+                                           == self.field]
+            sky_brightness = {}
+            for f in self.filters.keys():
+                filterobstime = Time(times4field[f'MJD_{f}'], format='mjd')
+                sun_position = get_body(
+                    'sun', filterobstime, location=EarthLocation.of_site('ctio'))
+                moon_position = get_body(
+                    'moon', filterobstime, location=EarthLocation.of_site('ctio'))
+                elongation = sun_position.separation(moon_position)
+                moon_phase = np.arctan2(
+                    sun_position.distance * np.sin(elongation),
+                    moon_position.distance -
+                    sun_position.distance * np.cos(elongation)
+                )
+                moon_illumination = (1 + np.cos(moon_phase))/2.0
+                sky_brightness[f'skybr_{self.filters[f]}'] = moon_illumination.value[0]
+
+            return sky_brightness
 
 
 if __name__ == '__main__':
@@ -164,8 +200,10 @@ if __name__ == '__main__':
     idr5_fields = pd.read_csv(args.fields)
     footprint = pd.read_csv(args.footprint)
     footprint['NAME'] = [n.replace('_', '-') for n in footprint['NAME']]
+    obstimetab = pd.read_csv(os.path.join(args.workdir, args.obstimefile))
     if args.test:
         field = idr5_fields['NAME'][0]
         fprops = FieldProperties(args, logger, field)
         fprops.footprint = footprint
-        depths, fwhms, reddening, sky_brightness = fprops.main()
+        fprops.obstimefile = obstimetab
+        df = fprops.main()
