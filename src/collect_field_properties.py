@@ -11,6 +11,7 @@ import numpy as np
 import sfdmap
 from astropy.coordinates import SkyCoord, get_body, EarthLocation
 from astropy.time import Time
+import multiprocessing as mp
 
 
 def parseargs():
@@ -24,13 +25,19 @@ def parseargs():
     parser.add_argument(
         "--data_dir", help="Directory containing data files")
     parser.add_argument(
-        "--output_file", help="Output file")
+        "--output_file", default='fields_properties.csv', help="Output file")
     parser.add_argument(
         '--footprint', help='Footprint file')
     parser.add_argument(
         '--test', action='store_true', help='Test mode')
     parser.add_argument(
         '--obstimefile', default=None, help='Observation time file')
+    parser.add_argument(
+        '--nprocesses', default=1, type=int, help='Number of processes to use')
+    parser.add_argument(
+        '--loglevel', default=logging.INFO, help='Log level')
+    parser.add_argument(
+        '--logfile', default='collect_field_properties.log', help='Log file')
 
     return parser.parse_args()
 
@@ -78,6 +85,7 @@ class FieldProperties:
         self.obstimefile = args.obstimefile
 
     def main(self):
+        logger.info(f'Processing field {self.field}')
         self.catalogues = self.get_catalogues()
         depths = self.get_depth()
         fwhms = self.get_fwhm()
@@ -207,3 +215,21 @@ if __name__ == '__main__':
         fprops.footprint = footprint
         fprops.obstimefile = obstimetab
         df = fprops.main()
+    else:
+        results = []
+        with mp.Pool(args.nprocesses) as pool:
+            for field in idr5_fields['NAME']:
+                fprops = FieldProperties(args, logger, field)
+                fprops.footprint = footprint
+                fprops.obstimefile = obstimetab
+                results.append(pool.apply_async(fprops.main))
+            pool.close()
+            pool.join()
+
+        df = pd.concat([r.get() for r in results], ignore_index=True)
+
+    output_file = os.path.join(args.workdir, args.output_file)
+    logger.info(f'Saving results to {output_file}')
+    df.to_csv(output_file, index=False)
+
+# End of file
