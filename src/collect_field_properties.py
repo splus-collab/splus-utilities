@@ -9,7 +9,7 @@ import logging
 import pandas as pd
 import numpy as np
 import sfdmap
-from astropy.coordinates import SkyCoord, get_body, EarthLocation
+from astropy.coordinates import SkyCoord, get_body, EarthLocation, AltAz
 from astropy.time import Time
 import multiprocessing as mp
 
@@ -29,7 +29,7 @@ def parseargs():
     parser.add_argument(
         '--footprint', help='Footprint file')
     parser.add_argument(
-        '--test', action='store_true', help='Test mode')
+        '--istest', action='store_true', help='Test mode')
     parser.add_argument(
         '--obstimefile', default=None, help='Observation time file')
     parser.add_argument(
@@ -183,6 +183,11 @@ class FieldProperties:
         else:
             times4field = self.obstimefile[self.obstimefile['Field']
                                            == self.field]
+            targcoords = SkyCoord(
+                ra=self.footprint[self.footprint['NAME'] == self.field]['RA'],
+                dec=self.footprint[self.footprint['NAME']
+                                   == self.field]['DEC'],
+                unit=('hour', 'deg'))
             sky_brightness = {}
             for f in self.filters.keys():
                 filterobstime = Time(times4field[f'MJD_{f}'], format='mjd')
@@ -198,6 +203,12 @@ class FieldProperties:
                 )
                 moon_illumination = (1 + np.cos(moon_phase))/2.0
                 sky_brightness[f'skybr_{self.filters[f]}'] = moon_illumination.value[0]
+                targaltaz = targcoords.transform_to(
+                    AltAz(obstime=filterobstime, location=EarthLocation.of_site('ctio')))
+                sky_brightness[f'targalt_{self.filters[f]}'] = targaltaz.alt.deg[0]
+
+                moon_separation = targcoords.separation(moon_position)
+                sky_brightness[f'moonsep_{self.filters[f]}'] = moon_separation.deg[0]
 
             return sky_brightness
 
@@ -209,7 +220,7 @@ if __name__ == '__main__':
     footprint = pd.read_csv(args.footprint)
     footprint['NAME'] = [n.replace('_', '-') for n in footprint['NAME']]
     obstimetab = pd.read_csv(os.path.join(args.workdir, args.obstimefile))
-    if args.test:
+    if args.istest:
         field = idr5_fields['NAME'][0]
         fprops = FieldProperties(args, logger, field)
         fprops.footprint = footprint
