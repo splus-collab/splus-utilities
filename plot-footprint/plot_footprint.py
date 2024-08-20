@@ -56,9 +56,9 @@ def get_ebv(args, res=200, save=True):
     dec = np.linspace(-90, 90, res)
     mesra, mesdec = np.meshgrid(ra, dec)
     coords = SkyCoord(ra=mesra.flatten(), dec=mesdec.flatten(),
-                      unit='degree', frame='icrs')
+                      unit='deg', frame='icrs')
     m = sfdmap.SFDMap(args.sfddata)
-    mesebv = m.ebv(coords, unit='degree')
+    mesebv = m.ebv(coords)
     if save:
         print('Saving ebv to ebv_%i.csv' % res)
         df = pd.DataFrame(
@@ -113,7 +113,7 @@ def plot_foot(args):
     ax.scatter(ra_rad, dec_rad,
                marker='H', s=8, color='gray', alpha=0.5)
 
-    showobserved = False
+    showobserved = True
     if showobserved:
         mask_obs = (t['STATUS'] == 1) | (t['STATUS'] == 2) | (
             t['STATUS'] == 4) | (t['STATUS'] == 5) | (t['STATUS'] == 6)
