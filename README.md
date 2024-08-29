@@ -8,4 +8,6 @@ A simple set of scripts meant to specific tasks for S-PLUS
 
 ## [Check moonlight contamination](docs/README_MLC.md)
 
+## [Get fields properties](docs/README_FP.md)
+
 ## [The S-PLUS members exclusive LICENSE](LICENSE)
