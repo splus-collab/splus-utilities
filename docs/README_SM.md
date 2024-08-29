@@ -60,4 +60,4 @@ The figure below shows the S-PLUS field STRIPE82-0001 where:
 
 Please note that S-PLUS objects with saturation/border proximity MASK=0 do not necessarily mean they are devoid of contamination. The object can still be near a stellar spike but outside of the "saturation radii" and, therefore, contaminated to some extent. These features are extremely difficult to estimate and there is ongoing work within the technical team to develop a tool that can tackle this issue. However, objects that have MASK=1 or 3 are most likely to be contaminated and, therefore, must be considered carefully.
 
-The code can be found in the [source directory](src/).
+The code can be found in the [source directory](../src/).
