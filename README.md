@@ -11,3 +11,5 @@ A simple set of scripts meant to specific tasks for S-PLUS
 ## [Get fields properties](docs/README_FP.md)
 
 ## [The S-PLUS members exclusive LICENSE](LICENSE)
+
+## [Plot current S-PLUS footprint](plot-footprint/README.md)
