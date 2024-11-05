@@ -40,6 +40,8 @@ def parse_args():
                         help='2MASS allssky catalogue name')
     parser.add_argument('--sfddata', type=str, default=os.getcwd(),
                         help='Path to SFD dust map data')
+    parser.add_argument('--ebvres', type=int, default=200,
+                        help='Resolution of the E(B-V) map (the background MV)')
     parser.add_argument('--savefig', action='store_true',
                         help='Save figure')
     parser.add_argument('--overlaycat', type=str, default=None,
@@ -98,11 +100,11 @@ def plot_foot(args):
         ax.scatter(xpos, ypos, c=np.log10(h.T), s=10,
                    marker='H', edgecolor='None', cmap='Greys')
     else:
-        coords, ebv = get_ebv(args, res=200, save=True)
+        coords, ebv = get_ebv(args, res=args.ebvres, save=True)
         ax.scatter(coords.ra.wrap_at(180 * u.deg).radian,
                    coords.dec.radian,
                    c=ebv,
-                   cmap='gray_r', marker='H', s=5, vmin=-.5, vmax=10)
+                   cmap='gray_r', marker='H', s=5, vmin=-1, vmax=5)
 
     print('Reading splus table...')
     t = ascii.read(args.splusfoot, format='csv', fast_reader=False)
