@@ -59,7 +59,8 @@ def get_ebv(args, res=200, save=True):
     mesra, mesdec = np.meshgrid(ra, dec)
     coords = SkyCoord(ra=mesra.flatten(), dec=mesdec.flatten(),
                       unit='deg', frame='icrs')
-    m = sfdmap.SFDMap(args.sfddata)
+    m = sfdmap.SFDMap(os.path.join(args.sfddata.strip(os.path.basename(args.sfddata)),
+                                   'data/sfddata-master'))
     mesebv = m.ebv(coords)
     if save:
         print('Saving ebv to ebv_%i.csv' % res)
